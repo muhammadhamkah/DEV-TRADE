@@ -47,3 +47,12 @@ def test_client_builds_quote_from_book():
     q = pm.quote("tok")
     assert (q["bid"], q["ask"], q["mid"]) == (0.59, 0.61, 0.6)
     assert q["asks"] == [(0.61, 3.0), (0.62, 7.0)] and q["bids"] == [(0.59, 5.0), (0.58, 10.0)]
+
+
+def test_price_history_downsamples():
+    hist = [{"t": 1_700_000_000 + i * 3600, "p": i / 100} for i in range(100)]
+    session = FakeSession({"https://clob/prices-history": {"history": hist}})
+    pm = Polymarket("https://gamma", "https://clob", session=session)
+    out = pm.price_history("tok", days=7, points=10)
+    assert session.calls[0][1]["interval"] == "1w"
+    assert len(out) == 11 and out[-1]["p"] == 0.99 and out[0]["p"] == 0.0

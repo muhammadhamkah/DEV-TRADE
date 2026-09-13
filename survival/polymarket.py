@@ -35,6 +35,7 @@ class Market:
     liquidity: float
     closed: bool
     resolved_outcome: str | None  # set once the market has paid out
+    rules: str = ""               # resolution criteria, from the market description
 
     @classmethod
     def from_gamma(cls, raw: dict[str, Any]) -> "Market":
@@ -55,6 +56,7 @@ class Market:
             liquidity=float(raw.get("liquidity") or 0),
             closed=closed,
             resolved_outcome=resolved,
+            rules=(raw.get("description") or "")[:700],
         )
 
     def token_for(self, outcome: str) -> str:
@@ -72,6 +74,11 @@ class Market:
             "closed": self.closed,
             "resolved_outcome": self.resolved_outcome,
         }
+
+    def detail(self) -> dict[str, Any]:
+        out = self.summary()
+        out["rules"] = self.rules
+        return out
 
 
 class Polymarket:
@@ -103,6 +110,19 @@ class Polymarket:
 
     def get_market(self, market_id: str) -> Market:
         return Market.from_gamma(self._get(f"{self.gamma_url}/markets/{market_id}"))
+
+    def price_history(self, token_id: str, days: int = 7, points: int = 24) -> list[dict[str, Any]]:
+        """Price of a token over the last `days`, downsampled to about `points` readings."""
+        days = max(1, min(int(days), 90))
+        interval = "1d" if days <= 1 else "1w" if days <= 7 else "1m" if days <= 30 else "max"
+        fidelity = max(10, int(days * 24 * 60 / max(points, 2)))
+        raw = self._get(f"{self.clob_url}/prices-history", {"market": token_id, "interval": interval, "fidelity": fidelity})
+        hist = raw.get("history") or []
+        if len(hist) > points:
+            step = len(hist) / points
+            hist = [hist[int(i * step)] for i in range(points)] + [hist[-1]]
+        import time as _t
+        return [{"t": _t.strftime("%m-%d %H:%M", _t.gmtime(h["t"])), "p": round(float(h["p"]), 3)} for h in hist]
 
     def quote(self, token_id: str) -> dict[str, Any]:
         """Order book for a token: best bid/ask plus the full ladder as (price, size) levels."""

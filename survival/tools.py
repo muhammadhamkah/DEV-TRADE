@@ -34,6 +34,37 @@ TOOLS = [
         "strict": True,
     },
     {
+        "name": "price_history",
+        "description": "How one outcome's price has moved over recent days. Use it to see whether the crowd is drifting toward or away from an outcome before you trade.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "market_id": {"type": "string"},
+                "outcome": {"type": "string"},
+                "days": {"type": "integer", "description": "1 to 90."},
+            },
+            "required": ["market_id", "outcome", "days"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "search_news",
+        "description": "Recent headlines about a topic from the last few days. Your only window on current events. "
+                       "Costs tokens to read, so ask specific questions about markets you are actually considering.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search terms, e.g. 'Fed rate decision September'."},
+                "days": {"type": "integer", "description": "How many days back to look, 1 to 30."},
+                "limit": {"type": "integer", "description": "How many headlines, 1 to 15."},
+            },
+            "required": ["query", "days", "limit"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "buy",
         "description": "Spend `usd` of cash on shares of `outcome` in `market_id` at the current ask plus slippage.",
         "input_schema": {

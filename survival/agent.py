@@ -10,6 +10,7 @@ from typing import Any
 from .backends import Backend, Completion, make_backend
 from .config import EFFORT_LEVELS, Settings
 from .ledger import Ledger
+from .news import search_news
 from .paper import PaperBroker, TradeRejected
 from .polymarket import Polymarket
 from .tools import TOOLS
@@ -190,9 +191,16 @@ class Agent:
 
     def tool_get_market(self, args: dict[str, Any]) -> dict[str, Any]:
         m = self.market.get_market(str(args["market_id"]))
-        out = m.summary()
-        out["book"] = {o: self.market.quote(t) for o, t in zip(m.outcomes, m.token_ids)}
+        out = m.detail()
+        out["book"] = {o: {k: v for k, v in self.market.quote(t).items() if k in ("bid", "ask", "mid")} for o, t in zip(m.outcomes, m.token_ids)}
         return out
+
+    def tool_price_history(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        m = self.market.get_market(str(args["market_id"]))
+        return self.market.price_history(m.token_for(str(args["outcome"])), days=int(args.get("days") or 7))
+
+    def tool_search_news(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        return search_news(str(args["query"]), days=int(args.get("days") or 3), limit=int(args.get("limit") or 8))
 
     def tool_buy(self, args: dict[str, Any]) -> dict[str, Any]:
         usd = float(args["usd"])

@@ -2,7 +2,7 @@
 # Egress allowlist. The agent may talk only to the model API and Polymarket.
 # Resolved at start; if a provider rotates IPs mid-run, restart the container.
 set -e
-ALLOW="${ALLOWED_HOSTS:-gamma-api.polymarket.com clob.polymarket.com}"
+ALLOW="${ALLOWED_HOSTS:-gamma-api.polymarket.com clob.polymarket.com news.google.com}"
 [ "${BACKEND:-anthropic}" = "anthropic" ] && ALLOW="$ALLOW api.anthropic.com"
 
 iptables -F OUTPUT

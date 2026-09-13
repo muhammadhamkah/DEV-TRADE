@@ -116,3 +116,17 @@ def test_effort_choice_persists_to_next_wakeup(tmp_path, fake_market):
     agent2.wake()
     assert client.requests[-1]["effort"] == "low"
     assert "Wake-up #2" in client.requests[-1]["messages"][0]["content"]
+
+
+def test_news_tool_is_wired(tmp_path, fake_market, monkeypatch):
+    from survival import agent as agent_mod
+    monkeypatch.setattr(agent_mod, "search_news", lambda q, days, limit: [{"title": f"{q} {days} {limit}"}])
+    client = ScriptedClient([
+        response([block_tool("search_news", {"query": "fed", "days": 2, "limit": 3})], "tool_use"),
+        response([block_text("ok")], "end_turn"),
+    ])
+    agent = make_agent(tmp_path, fake_market, client)
+    agent.wake()
+    result = json.loads(client.requests[1]["messages"][2]["content"][0]["content"])
+    assert result == [{"title": "fed 2 3"}]
+    assert {t["name"] for t in client.requests[0]["tools"]} >= {"search_news", "get_market"}

@@ -11,10 +11,10 @@ The question being tested is whether an agent can generate more value than it co
 
 ## What it can and cannot do
 
-The agent gets exactly eight tools: check status, list markets, inspect a market, buy, sell,
-choose its thinking effort, sleep, and write notes. It has no shell, no filesystem, no web,
-and no memory between wake-ups except the notes it writes. The container's egress is locked
-to the model API and Polymarket. The ledger is written only by the harness, so the agent
+The agent gets exactly ten tools: check status, list markets, inspect a market, see a market's
+price history, search recent news headlines, buy, sell, choose its thinking effort, sleep, and write notes. It has no shell,
+no filesystem, no general web access, and no memory between wake-ups except the notes it
+writes. The container's egress is locked to the model API, Polymarket, and Google News RSS. The ledger is written only by the harness, so the agent
 cannot edit its own balance.
 
 Guardrails are enforced in code, not in the prompt:
