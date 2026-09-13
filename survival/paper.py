@@ -78,9 +78,25 @@ class PaperBroker:
         ask = quote["ask"]
         if ask <= 0 or ask >= 1:
             raise TradeRejected("no usable ask price in the order book")
-        fill = min(0.999, ask * (1 + self.slippage_bps / 10_000))
-        fee = usd * self.fee_bps / 10_000
-        shares = (usd - fee) / fill
+        # Walk the ask ladder: each level only has so many shares. Anything past the book is unfilled.
+        levels = quote.get("asks") or [(ask, float("inf"))]
+        budget = usd * (1 - self.fee_bps / 10_000)
+        shares = 0.0
+        spent = 0.0
+        for price, size in levels:
+            price = min(0.999, price * (1 + self.slippage_bps / 10_000))
+            take = min(size, (budget - spent) / price)
+            if take <= 0:
+                break
+            shares += take
+            spent += take * price
+            if budget - spent < 1e-9:
+                break
+        if shares <= 0:
+            raise TradeRejected("order book has no depth on the ask side")
+        fill = spent / shares
+        fee = spent * self.fee_bps / 10_000
+        usd = round(spent + fee, 6)
         self.ledger.charge("trade_buy", usd, {"market": market.id, "outcome": outcome, "shares": shares, "price": fill, "fee": fee})
         pos = self.positions.get(key)
         if pos:
@@ -90,7 +106,9 @@ class PaperBroker:
         else:
             self.positions[key] = Position(market.id, market.question, outcome, market.token_for(outcome), shares, fill)
         self._save()
-        return {"filled": True, "shares": round(shares, 4), "price": round(fill, 4), "fee": round(fee, 6), "cash_after": self.ledger.balance}
+        return {"filled": True, "spent": usd, "shares": round(shares, 4), "avg_price": round(fill, 4), "fee": round(fee, 6),
+                "note": "partial fill: the order book ran out of shares at reasonable prices" if usd < budget / (1 - self.fee_bps / 10_000) - 1e-6 else "full fill",
+                "cash_after": self.ledger.balance}
 
     def sell(self, market: Market, outcome: str, shares: float | None, quote: dict[str, float]) -> dict[str, Any]:
         key = self._key(market.id, outcome)
@@ -103,8 +121,22 @@ class PaperBroker:
         bid = quote["bid"]
         if bid <= 0:
             raise TradeRejected("no bids in the order book; cannot sell right now")
-        fill = max(0.001, bid * (1 - self.slippage_bps / 10_000))
-        gross = qty * fill
+        levels = quote.get("bids") or [(bid, float("inf"))]
+        remaining = qty
+        gross = 0.0
+        for price, size in levels:
+            price = max(0.001, price * (1 - self.slippage_bps / 10_000))
+            take = min(size, remaining)
+            if take <= 0:
+                break
+            gross += take * price
+            remaining -= take
+            if remaining <= 1e-9:
+                break
+        qty = qty - remaining
+        if qty <= 0:
+            raise TradeRejected("order book has no depth on the bid side")
+        fill = gross / qty
         fee = gross * self.fee_bps / 10_000
         proceeds = gross - fee
         self.ledger.credit("trade_sell", proceeds, {"market": market.id, "outcome": outcome, "shares": qty, "price": fill, "fee": fee})

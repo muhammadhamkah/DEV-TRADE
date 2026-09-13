@@ -104,11 +104,11 @@ class Polymarket:
     def get_market(self, market_id: str) -> Market:
         return Market.from_gamma(self._get(f"{self.gamma_url}/markets/{market_id}"))
 
-    def quote(self, token_id: str) -> dict[str, float]:
-        """Best bid and ask for a token from the CLOB order book."""
+    def quote(self, token_id: str) -> dict[str, Any]:
+        """Order book for a token: best bid/ask plus the full ladder as (price, size) levels."""
         book = self._get(f"{self.clob_url}/book", {"token_id": token_id})
-        bids = sorted((float(b["price"]) for b in book.get("bids", [])), reverse=True)
-        asks = sorted(float(a["price"]) for a in book.get("asks", []))
-        bid = bids[0] if bids else 0.0
-        ask = asks[0] if asks else 1.0
-        return {"bid": bid, "ask": ask, "mid": round((bid + ask) / 2, 4)}
+        bids = sorted(((float(b["price"]), float(b.get("size") or 0)) for b in book.get("bids", [])), key=lambda x: -x[0])
+        asks = sorted(((float(a["price"]), float(a.get("size") or 0)) for a in book.get("asks", [])), key=lambda x: x[0])
+        bid = bids[0][0] if bids else 0.0
+        ask = asks[0][0] if asks else 1.0
+        return {"bid": bid, "ask": ask, "mid": round((bid + ask) / 2, 4), "bids": bids, "asks": asks}

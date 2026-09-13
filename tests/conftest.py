@@ -28,12 +28,13 @@ class FakeMarket:
 
     def __init__(self):
         self.raw = {"1": gamma_market("1"), "2": gamma_market("2", prices=("0.90", "0.10"))}
-        self.books = {
-            "tok-1-yes": {"bid": 0.59, "ask": 0.61, "mid": 0.60},
-            "tok-1-no": {"bid": 0.39, "ask": 0.41, "mid": 0.40},
-            "tok-2-yes": {"bid": 0.89, "ask": 0.91, "mid": 0.90},
-            "tok-2-no": {"bid": 0.09, "ask": 0.11, "mid": 0.10},
-        }
+        self.books = {tok: self.book(bid, ask) for tok, (bid, ask) in {
+            "tok-1-yes": (0.59, 0.61), "tok-1-no": (0.39, 0.41), "tok-2-yes": (0.89, 0.91), "tok-2-no": (0.09, 0.11),
+        }.items()}
+
+    @staticmethod
+    def book(bid, ask, depth=1_000_000):
+        return {"bid": bid, "ask": ask, "mid": round((bid + ask) / 2, 4), "bids": [(bid, depth)], "asks": [(ask, depth)]}
 
     def list_markets(self, limit=20, query=None):
         ms = [Market.from_gamma(r) for r in self.raw.values()]

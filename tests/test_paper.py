@@ -15,7 +15,7 @@ def test_buy_fills_at_ask_plus_slippage(tmp_path, fake_market):
     b = broker(tmp_path)
     m = fake_market.get_market("1")
     out = b.buy(m, "Yes", 10, fake_market.quote("tok-1-yes"))
-    assert out["price"] == round(0.61 * 1.005, 4)
+    assert out["avg_price"] == round(0.61 * 1.005, 4) and out["note"] == "full fill"
     assert b.ledger.balance == 40
     assert abs(out["shares"] - 10 / (0.61 * 1.005)) < 1e-3
 
@@ -66,3 +66,17 @@ def test_positions_persist(tmp_path, fake_market):
     assert list(b2.positions) == ["1:Yes"]
     marked = b2.mark(fake_market.quote)
     assert marked["net_worth"] < 50  # bought at ask, marked at bid: spread is a real cost
+
+
+def test_buy_walks_the_book_and_stops_when_depth_runs_out(tmp_path, fake_market):
+    b = broker(tmp_path, slippage_bps=0)
+    m = fake_market.get_market("1")
+    # 100 shares at 0.004, then 100 at 0.05, then nothing: a $10 order cannot fill
+    quote = {"bid": 0.003, "ask": 0.004, "mid": 0.0035, "bids": [(0.003, 100)], "asks": [(0.004, 100), (0.05, 100)]}
+    out = b.buy(m, "Yes", 10, quote)
+    assert out["shares"] == 200 and abs(out["spent"] - (0.4 + 5.0)) < 1e-9
+    assert out["note"].startswith("partial fill")
+    assert abs(b.ledger.balance - (50 - 5.4)) < 1e-9
+    # selling more than the bid side can absorb also stops at the book's edge
+    out = b.sell(m, "Yes", None, {"bid": 0.003, "ask": 0.004, "mid": 0.0035, "bids": [(0.003, 50)], "asks": []})
+    assert out["shares"] == 50 and b.positions["1:Yes"].shares == 150

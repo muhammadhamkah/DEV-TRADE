@@ -38,10 +38,12 @@ class FakeSession:
 def test_client_builds_quote_from_book():
     session = FakeSession({
         "https://gamma/markets": [gamma_market("1"), {"id": "bad", "outcomes": "[]", "clobTokenIds": "[]"}],
-        "https://clob/book": {"bids": [{"price": "0.58"}, {"price": "0.59"}], "asks": [{"price": "0.62"}, {"price": "0.61"}]},
+        "https://clob/book": {"bids": [{"price": "0.58", "size": "10"}, {"price": "0.59", "size": "5"}], "asks": [{"price": "0.62", "size": "7"}, {"price": "0.61", "size": "3"}]},
     })
     pm = Polymarket("https://gamma", "https://clob", session=session)
     markets = pm.list_markets(limit=5)
     assert [m.id for m in markets] == ["1"]  # markets without tokens are dropped
     assert session.calls[0][1]["closed"] == "false"
-    assert pm.quote("tok") == {"bid": 0.59, "ask": 0.61, "mid": 0.6}
+    q = pm.quote("tok")
+    assert (q["bid"], q["ask"], q["mid"]) == (0.59, 0.61, 0.6)
+    assert q["asks"] == [(0.61, 3.0), (0.62, 7.0)] and q["bids"] == [(0.59, 5.0), (0.58, 10.0)]
