@@ -1,0 +1,11 @@
+services:
+  agent:
+    build: .
+    env_file: .env
+    volumes:
+      - ./state:/app/state
+    # NET_ADMIN lets the entrypoint install an egress allowlist with iptables.
+    # Without it the agent still runs, but can reach any host.
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
