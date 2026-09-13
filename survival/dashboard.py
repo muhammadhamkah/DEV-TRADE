@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from .agent import AgentState
+from .body import Body
 from .config import Settings
 from .ledger import Ledger
 from .paper import PaperBroker
@@ -26,6 +27,8 @@ def snapshot(settings: Settings, mark: bool = True) -> dict[str, Any]:
     broker = PaperBroker(ledger=ledger, path=os.path.join(sd, "positions.json"), max_position_frac=settings.max_position_frac,
                          max_open_positions=settings.max_open_positions, slippage_bps=settings.slippage_bps, fee_bps=settings.fee_bps)
     state = AgentState.load(os.path.join(sd, "agent.json"), settings.default_effort)
+    body = Body.load(os.path.join(sd, "body.json"), settings.meal_price, settings.meal_restores, settings.starve_days)
+    body.hunger = min(100.0, body.hunger + max(0.0, time.time() - body.last_ts) * body.rate_per_second)  # project, don't save
     market = Polymarket(settings.gamma_url, settings.clob_url, timeout=5)
     quote = market.quote if mark else (lambda token_id: (_ for _ in ()).throw(RuntimeError("no marking")))
     marked = broker.mark(quote)
@@ -57,7 +60,8 @@ def snapshot(settings: Settings, mark: bool = True) -> dict[str, Any]:
         "asleep_for_s": max(0, round(state.sleep_until - time.time())),
         "inference_spent": round(inference, 4),
         "avg_wakeup_cost": round(inference / state.wakeups, 4) if state.wakeups else None,
-        "rent_paid": round(-ledger.total("rent"), 4),
+        "food_bought": round(-ledger.total("food"), 4),
+        "hunger": body.describe(),
         "trading_pnl": round(ledger.total("trade_sell") + ledger.total("settlement") + ledger.total("trade_buy") + marked["positions_value"], 4),
         "model": f"{settings.model} via {settings.backend}",
         "positions": marked["positions"],
@@ -78,7 +82,7 @@ def watch(settings: Settings, every: int = 30) -> None:
         status = "ALIVE" if snap["alive"] else "DEAD"
         print(f"{status}  cash ${snap['cash']:.2f}  positions ${snap['positions_value']:.2f}  net ${snap['net_worth']:.2f}   {snap['now']}")
         print(f"wake-ups {snap['wakeups']}  effort {snap['effort']}  asleep {snap['asleep_for_s'] // 3600}h{(snap['asleep_for_s'] % 3600) // 60:02d}m  "
-              f"thinking ${snap['inference_spent']:.3f}  food ${snap['rent_paid']:.3f}  trading {snap['trading_pnl']:+.2f}")
+              f"hunger {snap['hunger']['hunger']:.0f} ({snap['hunger']['state']})  thinking ${snap['inference_spent']:.3f}  food ${snap['food_bought']:.2f}  trading {snap['trading_pnl']:+.2f}")
         print()
         if snap["positions"]:
             print("POSITIONS")
@@ -123,7 +127,8 @@ PAGE = """<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" conten
  <div class="tile"><b>{wakeups}</b><span>wake-ups &middot; effort {effort}</span></div>
  <div class="tile"><b>{asleep}</b><span>asleep</span></div>
  <div class="tile"><b>${thinking}</b><span>spent thinking{avg}</span></div>
- <div class="tile"><b>${rent}</b><span>food eaten</span></div>
+ <div class="tile"><b class="{hungercls}">{hunger}</b><span>hunger &middot; {hungerstate}</span></div>
+ <div class="tile"><b>${rent}</b><span>spent on food</span></div>
  <div class="tile"><b class="{pnlcls}">{pnl}</b><span>trading p&amp;l</span></div>
 </div>
 <h2>Notes (the agent's only memory)</h2><pre>{notes}</pre>
@@ -174,7 +179,9 @@ def render(snap: dict[str, Any]) -> str:
             .replace("{asleep}", f"{asleep // 3600}h {(asleep % 3600) // 60:02d}m" if asleep else "no")
             .replace("{thinking}", f"{snap['inference_spent']:.3f}")
             .replace("{avg}", f" &middot; {snap['avg_wakeup_cost']:.3f}/wake-up" if snap["avg_wakeup_cost"] is not None else "")
-            .replace("{rent}", f"{snap['rent_paid']:.3f}")
+            .replace("{rent}", f"{snap['food_bought']:.2f}")
+            .replace("{hunger}", f"{snap['hunger']['hunger']:.0f}").replace("{hungerstate}", e(snap["hunger"]["state"]))
+            .replace("{hungercls}", "neg" if snap["hunger"]["hunger"] >= 70 else "")
             .replace("{pnlcls}", "pos" if snap["trading_pnl"] >= 0 else "neg").replace("{pnl}", f"{snap['trading_pnl']:+.2f}")
             .replace("{notes}", e(snap["notes"]) or "(none yet)")
             .replace("{positions}", positions).replace("{requests}", requests_html)

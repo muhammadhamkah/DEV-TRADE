@@ -18,4 +18,5 @@ def test_snapshot_and_render_after_a_wakeup(tmp_path, fake_market, monkeypatch):
     assert snap["positions"][0]["outcome"] == "Yes" and snap["avg_wakeup_cost"] == 0.03
     page = dashboard.render(snap)
     assert "The agent is alive" in page and "&lt;b&gt;1:Yes&lt;/b&gt;" in page  # notes are escaped
+    assert snap["hunger"]["state"] == "full" and "hunger" in page
     assert "Will thing 1 happen?" in page

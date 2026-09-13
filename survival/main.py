@@ -16,6 +16,7 @@ import sys
 import time
 
 from .agent import Agent, AgentState, Dead
+from .body import Body, Starved
 from .config import Settings
 from .ledger import Ledger
 from .paper import PaperBroker
@@ -37,29 +38,8 @@ def build(settings: Settings, backend=None) -> Agent:
     )
     market = Polymarket(settings.gamma_url, settings.clob_url)
     state = AgentState.load(os.path.join(sd, "agent.json"), settings.default_effort)
-    return Agent(settings=settings, ledger=ledger, broker=broker, market=market, state=state, backend=backend)
-
-
-def _clock_path(settings: Settings) -> str:
-    return os.path.join(settings.state_dir, "clock.json")
-
-
-def charge_rent(agent: Agent, now: float | None = None) -> float:
-    """Charge rent for wall-clock time elapsed since the last charge."""
-    now = now or time.time()
-    path = _clock_path(agent.settings)
-    last = now
-    if os.path.exists(path):
-        with open(path) as fh:
-            last = json.load(fh).get("last_rent", now)
-    elapsed = max(0.0, now - last)
-    due = elapsed * agent.settings.rent_per_second
-    if due > 0:
-        agent.ledger.charge("rent", due, {"seconds": round(elapsed)})
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w") as fh:
-        json.dump({"last_rent": now}, fh)
-    return due
+    body = Body.load(os.path.join(sd, "body.json"), settings.meal_price, settings.meal_restores, settings.starve_days)
+    return Agent(settings=settings, ledger=ledger, broker=broker, market=market, state=state, body=body, backend=backend)
 
 
 def die(agent: Agent, cause: str) -> None:
@@ -69,7 +49,8 @@ def die(agent: Agent, cause: str) -> None:
         "cause": cause,
         "wakeups": agent.state.wakeups,
         "inference_spent": -agent.ledger.total("inference"),
-        "rent_paid": -agent.ledger.total("rent"),
+        "food_bought": -agent.ledger.total("food"),
+        "hunger": round(agent.body.hunger, 1),
         "trading_pnl": agent.ledger.total("trade_sell") + agent.ledger.total("settlement") + agent.ledger.total("trade_buy"),
         "last_notes": agent.state.notes,
     }
@@ -79,10 +60,11 @@ def die(agent: Agent, cause: str) -> None:
 
 
 def one_tick(agent: Agent) -> dict | None:
-    """Rent, settlement, then a wake-up unless asleep. Returns the wake-up summary or None."""
-    charge_rent(agent)
-    if agent.ledger.is_dead:
-        die(agent, "could not pay for food")
+    """Hunger, settlement, then a wake-up unless asleep. Returns the wake-up summary or None."""
+    try:
+        agent.body.advance()
+    except Starved as exc:
+        die(agent, str(exc))
         return None
     for ev in agent.broker.settle(agent.market.get_market):
         print("SETTLED:", json.dumps(ev))
@@ -111,7 +93,7 @@ def run(settings: Settings) -> None:
             return
         else:
             one_tick(agent)
-            if agent.ledger.is_dead:
+            if agent.ledger.is_dead or os.path.exists(os.path.join(settings.state_dir, "OBITUARY.json")):
                 return
         time.sleep(settings.tick_seconds)
 

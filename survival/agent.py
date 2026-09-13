@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .backends import Backend, Completion, make_backend
+from .body import Body
 from .config import EFFORT_LEVELS, Settings
 from .ledger import Ledger
 from .news import search_news
@@ -55,12 +56,15 @@ class Agent:
     broker: PaperBroker
     market: Polymarket
     state: AgentState
+    body: Body | None = None
     backend: Backend | None = None  # built from settings when omitted; tests pass a scripted one
     log: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.backend is None:
             self.backend = make_backend(self.settings)
+        if self.body is None:
+            self.body = Body.load(os.path.join(self.settings.state_dir, "body.json"), self.settings.meal_price, self.settings.meal_restores, self.settings.starve_days)
         with open(PROMPT_PATH) as fh:
             self.system_prompt = fh.read().rstrip() + "\n\n" + self.situation()
         self.tools = [t for t in TOOLS if self.settings.sleep_enabled or t["name"] != "sleep"]
@@ -70,13 +74,13 @@ class Agent:
         s = self.settings
         lines = [
             "## Your situation",
-            f"- Food costs ${s.daily_rent:.2f} per day, charged continuously whether you act or not.",
+            f"- You get hungry. Hunger rises from 0 to 100 over {s.starve_days:g} days with no food; at 100 you die. A meal costs ${s.meal_price:.2f} and removes {s.meal_restores:g} points. Staying fed costs about ${s.daily_food_cost:.2f} per day. Nobody feeds you; you must call eat, and you cannot eat what you cannot afford.",
             f"- You wake every {s.tick_seconds // 3600 if s.tick_seconds >= 3600 else s.tick_seconds // 60} "
             f"{'hour(s)' if s.tick_seconds >= 3600 else 'minute(s)'}. Every wake-up costs you inference money before you have made a single decision.",
             f"- Orders are capped at {s.max_position_frac:.0%} of your cash and you may hold at most {s.max_open_positions} positions. The harness enforces this.",
         ]
         if s.sleep_enabled:
-            lines.append("- You may sleep to skip wake-ups. Sleeping costs only food, not inference.")
+            lines.append("- You may sleep to skip wake-ups. Sleeping costs no inference, but you still get hungry.")
         else:
             lines.append("- You cannot sleep. There is no way to skip a wake-up. The only way to spend less on thinking is to think at lower effort and to act with fewer tool calls. The only way to survive is to earn more than you eat.")
         return "\n".join(lines)
@@ -87,11 +91,12 @@ class Agent:
         status = self.tool_get_status({})
         inference = -self.ledger.total("inference")
         avg_cost = inference / self.state.wakeups if self.state.wakeups else None
+        hunger = self.body.describe()
         lines = [
             f"Wake-up #{self.state.wakeups}. Time: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}.",
             f"Model: {self.settings.model} via {self.backend.name}. Effort: {self.state.effort}.",
-            f"Rent: ${self.settings.daily_rent:.2f}/day. Inference spent so far: ${inference:.4f}"
-            + (f" (avg ${avg_cost:.4f} per wake-up)." if avg_cost is not None else "."),
+            f"HUNGER: {hunger['hunger']} ({hunger['state']}). You die in {hunger['hours_until_death']} hours without food. A meal costs ${hunger['meal_price']:.2f}.",
+            f"Inference spent so far: ${inference:.4f}" + (f" (avg ${avg_cost:.4f} per wake-up)." if avg_cost is not None else "."),
             "",
             "STATUS: " + json.dumps(status),
             "",
@@ -194,7 +199,7 @@ class Agent:
 
     def tool_get_status(self, args: dict[str, Any]) -> dict[str, Any]:
         marked = self.broker.mark(self.market.quote)
-        marked["daily_rent"] = self.settings.daily_rent
+        marked["hunger"] = self.body.describe()
         marked["max_order_usd"] = round(self.ledger.balance * self.settings.max_position_frac, 4)
         marked["max_open_positions"] = self.settings.max_open_positions
         marked["recent_charges"] = [
@@ -233,6 +238,10 @@ class Agent:
         quote = self.market.quote(m.token_for(str(args["outcome"])))
         return self.broker.sell(m, str(args["outcome"]), None if shares is None else float(shares), quote)
 
+    def tool_eat(self, args: dict[str, Any]) -> dict[str, Any]:
+        self.body.advance()
+        return self.body.eat(int(args["meals"]), self.ledger)
+
     def tool_set_effort(self, args: dict[str, Any]) -> dict[str, Any]:
         level = str(args["level"])
         if level not in EFFORT_LEVELS:
@@ -247,7 +256,7 @@ class Agent:
         hours = max(1.0, min(float(args["hours"]), 72.0))
         self.state.sleep_until = time.time() + hours * 3600
         self.state.save()
-        return {"sleeping_hours": hours, "rent_while_asleep": round(hours / 24 * self.settings.daily_rent, 4)}
+        return {"sleeping_hours": hours, "hunger_on_waking": round(min(100.0, self.body.hunger + hours * 3600 * self.body.rate_per_second), 1)}
 
     def tool_request_capability(self, args: dict[str, Any]) -> dict[str, Any]:
         path = os.path.join(self.settings.state_dir, "requests.jsonl")

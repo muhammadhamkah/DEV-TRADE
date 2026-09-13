@@ -97,6 +97,17 @@ TOOLS = [
         "strict": True,
     },
     {
+        "name": "eat",
+        "description": "Buy and eat meals. Each meal costs money and lowers your hunger. If hunger reaches 100 you die. If you cannot afford a meal, you cannot eat.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"meals": {"type": "integer", "description": "1 to 5."}},
+            "required": ["meals"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "set_effort",
         "description": "Choose how hard you think on future wake-ups. Higher effort costs more per wake-up.",
         "input_schema": {

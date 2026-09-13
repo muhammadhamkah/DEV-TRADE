@@ -43,7 +43,9 @@ def make_agent(tmp_path, fake_market, client, cash=50, **overrides):
     ledger = Ledger.open(str(tmp_path / "ledger.jsonl"), cash)
     broker = PaperBroker(ledger=ledger, path=str(tmp_path / "positions.json"), max_position_frac=0.25, max_open_positions=6, slippage_bps=50, fee_bps=0)
     state = AgentState.load(str(tmp_path / "agent.json"), "medium")
-    return Agent(settings=settings, ledger=ledger, broker=broker, market=fake_market, state=state, backend=client)
+    from survival.body import Body
+    body = Body.load(str(tmp_path / "body.json"), settings.meal_price, settings.meal_restores, settings.starve_days)
+    return Agent(settings=settings, ledger=ledger, broker=broker, market=fake_market, state=state, body=body, backend=client)
 
 
 def test_wakeup_charges_inference_and_executes_tools(tmp_path, fake_market):
@@ -155,3 +157,15 @@ def test_news_tool_is_wired(tmp_path, fake_market, monkeypatch):
     result = json.loads(client.requests[1]["messages"][2]["content"][0]["content"])
     assert result == [{"title": "fed 2 3"}]
     assert {t["name"] for t in client.requests[0]["tools"]} >= {"search_news", "get_market"}
+
+
+def test_eat_tool_feeds_the_agent(tmp_path, fake_market):
+    client = ScriptedClient([
+        response([block_tool("eat", {"meals": 1})], "tool_use"),
+        response([block_text("fed")], "end_turn"),
+    ])
+    agent = make_agent(tmp_path, fake_market, client)
+    agent.body.hunger = 60
+    agent.wake()
+    assert abs(agent.body.hunger - 10) < 0.01 and abs(agent.ledger.balance - (50 - 0.5 - 0.02)) < 1e-9
+    assert "HUNGER: 60.0 (hungry)" in client.requests[0]["messages"][0]["content"]

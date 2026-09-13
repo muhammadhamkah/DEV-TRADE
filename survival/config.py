@@ -35,7 +35,9 @@ class Settings:
     state_dir: str = os.environ.get("SURVIVAL_STATE_DIR", "state")
     # Economy
     starting_balance: float = _f("STARTING_BALANCE", "50")
-    daily_rent: float = _f("DAILY_RENT", "0.50")          # food: cost of living, USD per day, charged continuously
+    meal_price: float = _f("MEAL_PRICE", "0.50")          # what one meal costs
+    meal_restores: float = _f("MEAL_RESTORES", "50")      # hunger points one meal removes (0..100 scale)
+    starve_days: float = _f("STARVE_DAYS", "2")           # days from just-fed to dead with no food
     tick_seconds: int = _i("TICK_SECONDS", "3600")        # how often the agent wakes
     sleep_enabled: bool = os.environ.get("SLEEP_ENABLED", "0") == "1"  # off: it must feed itself every wake-up
     # Inference
@@ -65,8 +67,9 @@ class Settings:
     live_trading: bool = os.environ.get("LIVE_TRADING", "0") == "1"
 
     @property
-    def rent_per_second(self) -> float:
-        return self.daily_rent / 86400.0
+    def daily_food_cost(self) -> float:
+        """What staying fed costs per day, for the briefing."""
+        return 100.0 / self.starve_days / self.meal_restores * self.meal_price
 
 
 EFFORT_LEVELS = ("low", "medium", "high")

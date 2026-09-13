@@ -3,17 +3,18 @@
 An experiment. A Claude agent is given a small cash stake and one rule: **stay alive**.
 
 - Every time it thinks, the real cost of that inference is deducted from its balance.
-- Food is deducted continuously, whether it thinks or not. By default it cannot sleep through wake-ups, so every hour costs inference and the only way to survive is to earn more than it eats. Set `SLEEP_ENABLED=1` for the gentler version.
+- It gets hungry. It has to buy meals with cash, and if hunger hits the limit it starves. Nobody feeds it.
+- By default it cannot sleep through wake-ups, so every hour costs inference. Set `SLEEP_ENABLED=1` for the gentler version.
 - Its only income is trading on Polymarket prediction markets.
-- When the balance hits zero, it dies. No deposits, no bailouts.
+- When the balance hits zero, or it starves, it dies. No deposits, no bailouts.
 
 The question being tested is whether an agent can generate more value than it consumes.
 
 ## What it can and cannot do
 
 The agent gets these tools: check status, list markets, inspect a market, see a market's
-price history, search recent news headlines, buy, sell, choose its thinking effort, ask its
-operator for a capability it lacks, write notes, and (only if enabled) sleep. It has no shell,
+price history, search recent news headlines, buy, sell, eat, choose its thinking effort, ask
+its operator for a capability it lacks, write notes, and (only if enabled) sleep. It has no shell,
 no filesystem, no general web access, and no memory between wake-ups except the notes it
 writes. The container's egress is locked to the model API, Polymarket, and Google News RSS. The ledger is written only by the harness, so the agent
 cannot edit its own balance.
@@ -77,7 +78,7 @@ State lives in `state/`: `ledger.jsonl` (every cent, append-only), `positions.js
 
 All knobs are environment variables; see `.env.example`. The interesting ones:
 
-- `DAILY_RENT` is the food bill. At $0.50/day a $50 stake would last 100 days if thinking were free, but it isn't.
+- `MEAL_PRICE`, `MEAL_RESTORES`, and `STARVE_DAYS` set the food economy. Defaults: a meal is $0.50, two meals take it from starving to full, and it starves in two days without eating.
 - `SLEEP_ENABLED` decides whether it can skip wake-ups. Off by default: it has to feed itself.
 - `SURVIVAL_MODEL` picks the brain. A weaker model is a worse trader but no cheaper on paper, so the harness rewards good judgment, not raw size.
 - `SYNTHETIC_PRICE_INPUT` and `SYNTHETIC_PRICE_OUTPUT` set what free backends charge the agent. Lower them and the agent can afford to think more; raise them and every wake-up hurts.
