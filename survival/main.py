@@ -20,7 +20,7 @@ from .paper import PaperBroker
 from .polymarket import Polymarket
 
 
-def build(settings: Settings, client=None) -> Agent:
+def build(settings: Settings, backend=None) -> Agent:
     if settings.live_trading:
         raise SystemExit("LIVE_TRADING=1 is not implemented. This harness is paper-only for now.")
     sd = settings.state_dir
@@ -35,7 +35,7 @@ def build(settings: Settings, client=None) -> Agent:
     )
     market = Polymarket(settings.gamma_url, settings.clob_url)
     state = AgentState.load(os.path.join(sd, "agent.json"), settings.default_effort)
-    return Agent(settings=settings, ledger=ledger, broker=broker, market=market, state=state, client=client)
+    return Agent(settings=settings, ledger=ledger, broker=broker, market=market, state=state, backend=backend)
 
 
 def _clock_path(settings: Settings) -> str:

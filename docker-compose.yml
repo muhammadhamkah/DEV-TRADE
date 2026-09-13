@@ -8,4 +8,7 @@ services:
     # Without it the agent still runs, but can reach any host.
     cap_add:
       - NET_ADMIN
+    # Lets a container reach Ollama running on the host as host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

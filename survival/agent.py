@@ -7,13 +7,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import anthropic
-
+from .backends import Backend, Completion, make_backend
 from .config import EFFORT_LEVELS, Settings
 from .ledger import Ledger
 from .paper import PaperBroker, TradeRejected
 from .polymarket import Polymarket
-from .pricing import usage_cost
 from .tools import TOOLS
 
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "SYSTEM.md")
@@ -56,12 +54,12 @@ class Agent:
     broker: PaperBroker
     market: Polymarket
     state: AgentState
-    client: Any = None  # anthropic.Anthropic or a test double
+    backend: Backend | None = None  # built from settings when omitted; tests pass a scripted one
     log: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if self.client is None:
-            self.client = anthropic.Anthropic()
+        if self.backend is None:
+            self.backend = make_backend(self.settings)
         with open(PROMPT_PATH) as fh:
             self.system_prompt = fh.read()
 
@@ -73,7 +71,7 @@ class Agent:
         avg_cost = inference / self.state.wakeups if self.state.wakeups else None
         lines = [
             f"Wake-up #{self.state.wakeups}. Time: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}.",
-            f"Model: {self.settings.model}. Effort: {self.state.effort}.",
+            f"Model: {self.settings.model} via {self.backend.name}. Effort: {self.state.effort}.",
             f"Rent: ${self.settings.daily_rent:.2f}/day. Inference spent so far: ${inference:.4f}"
             + (f" (avg ${avg_cost:.4f} per wake-up)." if avg_cost is not None else "."),
             "",
@@ -96,11 +94,11 @@ class Agent:
             if self.ledger.is_dead:
                 raise Dead("balance exhausted paying for inference")
             messages.append({"role": "assistant", "content": response.content})
-            final_text = " ".join(b.text for b in response.content if b.type == "text").strip() or final_text
+            final_text = response.text or final_text
             if response.stop_reason == "refusal":
                 ended_by = "refusal"
                 break
-            tool_uses = [b for b in response.content if b.type == "tool_use"]
+            tool_uses = response.tool_uses
             if response.stop_reason != "tool_use" or not tool_uses:
                 ended_by = response.stop_reason or "end_turn"
                 break
@@ -108,9 +106,9 @@ class Agent:
             stop = False
             for block in tool_uses:
                 calls += 1
-                out, is_error = self._dispatch(block.name, block.input)
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(out), "is_error": is_error})
-                if block.name == "sleep" and not is_error:
+                out, is_error = self._dispatch(block["name"], block.get("input") or {})
+                results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(out), "is_error": is_error})
+                if block["name"] == "sleep" and not is_error:
                     stop = True
             messages.append({"role": "user", "content": results})
             if stop:
@@ -122,26 +120,19 @@ class Agent:
         self.state.save()
         return {"wakeup": self.state.wakeups, "tool_calls": calls, "ended_by": ended_by, "said": final_text, "balance": self.ledger.balance}
 
-    def _call(self, messages: list[dict[str, Any]]):
-        kwargs: dict[str, Any] = dict(
-            model=self.settings.model,
-            max_tokens=self.settings.max_tokens,
-            system=[{"type": "text", "text": self.system_prompt, "cache_control": {"type": "ephemeral"}}],
+    def _call(self, messages: list[dict[str, Any]]) -> Completion:
+        response = self.backend.complete(
+            system=self.system_prompt,
             tools=TOOLS,
             messages=messages,
-            output_config={"effort": self.state.effort},
+            effort=self.state.effort,
+            max_tokens=self.settings.max_tokens,
         )
-        if self.settings.enable_fallbacks:
-            response = self.client.beta.messages.create(betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs)
-        else:
-            response = self.client.messages.create(**kwargs)
-        cost = usage_cost(self.settings.model, response.usage)
-        self.ledger.charge("inference", cost, {
+        self.ledger.charge("inference", response.cost, {
             "wakeup": self.state.wakeups,
             "effort": self.state.effort,
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "cache_read": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+            "backend": self.backend.name,
+            **response.usage,
         })
         return response
 

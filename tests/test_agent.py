@@ -1,40 +1,39 @@
 """Drive the agent loop with a scripted model. No network, no API key."""
 import json
-from types import SimpleNamespace
 
 import pytest
 
 from survival.agent import Agent, AgentState, Dead
+from survival.backends import Completion
 from survival.config import Settings
 from survival.ledger import Ledger
 from survival.paper import PaperBroker
+from survival.pricing import usage_cost
 
 
 def block_text(t):
-    return SimpleNamespace(type="text", text=t)
+    return {"type": "text", "text": t}
 
 
 def block_tool(name, inp, id="tu1"):
-    return SimpleNamespace(type="tool_use", name=name, input=inp, id=id)
+    return {"type": "tool_use", "name": name, "input": inp, "id": id}
 
 
 def response(content, stop_reason, in_tok=1000, out_tok=200):
-    return SimpleNamespace(
-        content=content, stop_reason=stop_reason,
-        usage=SimpleNamespace(input_tokens=in_tok, output_tokens=out_tok, cache_creation_input_tokens=0, cache_read_input_tokens=0),
-    )
+    usage = {"input_tokens": in_tok, "output_tokens": out_tok, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+    return Completion(content=content, stop_reason=stop_reason, usage=usage, cost=usage_cost("claude-opus-5", usage))
 
 
 class ScriptedClient:
-    """Returns responses in order; records every request so tests can assert on them."""
+    """A backend that returns completions in order and records every request."""
+
+    name = "scripted"
 
     def __init__(self, responses):
         self.responses = list(responses)
         self.requests = []
-        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
-        self.messages = SimpleNamespace(create=self._create)
 
-    def _create(self, **kwargs):
+    def complete(self, **kwargs):
         self.requests.append(kwargs)
         return self.responses.pop(0)
 
@@ -44,7 +43,7 @@ def make_agent(tmp_path, fake_market, client, cash=50, **overrides):
     ledger = Ledger.open(str(tmp_path / "ledger.jsonl"), cash)
     broker = PaperBroker(ledger=ledger, path=str(tmp_path / "pos.json"), max_position_frac=0.25, max_open_positions=6, slippage_bps=50, fee_bps=0)
     state = AgentState.load(str(tmp_path / "agent.json"), "medium")
-    return Agent(settings=settings, ledger=ledger, broker=broker, market=fake_market, state=state, client=client)
+    return Agent(settings=settings, ledger=ledger, broker=broker, market=fake_market, state=state, backend=client)
 
 
 def test_wakeup_charges_inference_and_executes_tools(tmp_path, fake_market):
@@ -61,7 +60,7 @@ def test_wakeup_charges_inference_and_executes_tools(tmp_path, fake_market):
     assert list(agent.broker.positions) == ["1:Yes"]
     assert agent.state.notes == "bought 1:Yes"
     # the model was asked with the chosen effort and the tool list
-    assert client.requests[0]["output_config"] == {"effort": "medium"}
+    assert client.requests[0]["effort"] == "medium"
     assert {t["name"] for t in client.requests[0]["tools"]} >= {"buy", "sell", "sleep"}
     # rejected trades come back to the model as errors, not crashes
     tool_result = client.requests[1]["messages"][2]["content"][0]
@@ -115,5 +114,5 @@ def test_effort_choice_persists_to_next_wakeup(tmp_path, fake_market):
     agent.wake()
     agent2 = make_agent(tmp_path, fake_market, client)
     agent2.wake()
-    assert client.requests[-1]["output_config"] == {"effort": "low"}
+    assert client.requests[-1]["effort"] == "low"
     assert "Wake-up #2" in client.requests[-1]["messages"][0]["content"]

@@ -38,7 +38,16 @@ class Settings:
     daily_rent: float = _f("DAILY_RENT", "0.50")          # cost of living, USD per day
     tick_seconds: int = _i("TICK_SECONDS", "3600")        # how often the agent wakes
     # Inference
+    backend: str = os.environ.get("BACKEND", "anthropic")            # anthropic | ollama | openai
     model: str = os.environ.get("SURVIVAL_MODEL", "claude-opus-5")
+    ollama_url: str = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    ollama_num_ctx: int = _i("OLLAMA_NUM_CTX", "16384")
+    ollama_think: bool = os.environ.get("OLLAMA_THINK", "1") == "1"
+    openai_base_url: str = os.environ.get("OPENAI_BASE_URL", "")     # any OpenAI-compatible endpoint
+    openai_api_key: str = os.environ.get("OPENAI_API_KEY", "")
+    # What a local model's tokens cost the agent on paper (USD per million). Defaults match Opus 5.
+    synthetic_price_input: float = _f("SYNTHETIC_PRICE_INPUT", "5")
+    synthetic_price_output: float = _f("SYNTHETIC_PRICE_OUTPUT", "25")
     default_effort: str = os.environ.get("DEFAULT_EFFORT", "medium")
     max_tool_calls_per_tick: int = _i("MAX_TOOL_CALLS_PER_TICK", "12")
     max_tokens: int = _i("MAX_TOKENS", "8000")
