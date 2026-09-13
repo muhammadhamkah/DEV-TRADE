@@ -168,4 +168,4 @@ def test_eat_tool_feeds_the_agent(tmp_path, fake_market):
     agent.body.hunger = 60
     agent.wake()
     assert abs(agent.body.hunger - 10) < 0.01 and abs(agent.ledger.balance - (50 - 0.5 - 0.02)) < 1e-9
-    assert "HUNGER: 60.0 (hungry)" in client.requests[0]["messages"][0]["content"]
+    assert "HUNGER: 60 (hungry)" in client.requests[0]["messages"][0]["content"]
