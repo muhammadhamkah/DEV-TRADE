@@ -16,12 +16,17 @@ def test_rent_accrues_by_wall_clock(tmp_path, fake_market):
     assert abs(agent.ledger.balance - 49.98) < 1e-9
 
 
-def test_one_tick_skips_wakeup_while_asleep(tmp_path, fake_market):
+def test_one_tick_skips_wakeup_while_asleep_only_if_sleep_enabled(tmp_path, fake_market):
     client = ScriptedClient([response([block_text("hi")], "end_turn")])
-    agent = make_agent(tmp_path, fake_market, client)
+    agent = make_agent(tmp_path, fake_market, client, sleep_enabled=True)
     agent.state.sleep_until = time.time() + 3600
     assert m.one_tick(agent) is None
     assert client.requests == []
+    # with sleep disabled, a leftover timer from an earlier life is ignored
+    agent2 = make_agent(tmp_path, fake_market, client)
+    agent2.state.sleep_until = time.time() + 3600
+    assert m.one_tick(agent2) is not None
+    assert len(client.requests) == 1
 
 
 def test_death_writes_obituary(tmp_path, fake_market):

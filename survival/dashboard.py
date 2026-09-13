@@ -40,7 +40,13 @@ def snapshot(settings: Settings, mark: bool = True) -> dict[str, Any]:
         with open(wk_path) as fh:
             wakeups = [json.loads(line) for line in fh if line.strip()]
     inference = -ledger.total("inference")
+    requests_: list[dict[str, Any]] = []
+    rq_path = os.path.join(sd, "requests.jsonl")
+    if os.path.exists(rq_path):
+        with open(rq_path) as fh:
+            requests_ = [json.loads(line) for line in fh if line.strip()]
     return {
+        "requests": requests_[::-1],
         "now": time.strftime("%Y-%m-%d %H:%M:%S"),
         "alive": not ledger.is_dead and obituary is None,
         "cash": round(ledger.balance, 4),
@@ -72,7 +78,7 @@ def watch(settings: Settings, every: int = 30) -> None:
         status = "ALIVE" if snap["alive"] else "DEAD"
         print(f"{status}  cash ${snap['cash']:.2f}  positions ${snap['positions_value']:.2f}  net ${snap['net_worth']:.2f}   {snap['now']}")
         print(f"wake-ups {snap['wakeups']}  effort {snap['effort']}  asleep {snap['asleep_for_s'] // 3600}h{(snap['asleep_for_s'] % 3600) // 60:02d}m  "
-              f"thinking ${snap['inference_spent']:.3f}  rent ${snap['rent_paid']:.3f}  trading {snap['trading_pnl']:+.2f}")
+              f"thinking ${snap['inference_spent']:.3f}  food ${snap['rent_paid']:.3f}  trading {snap['trading_pnl']:+.2f}")
         print()
         if snap["positions"]:
             print("POSITIONS")
@@ -117,11 +123,12 @@ PAGE = """<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" conten
  <div class="tile"><b>{wakeups}</b><span>wake-ups &middot; effort {effort}</span></div>
  <div class="tile"><b>{asleep}</b><span>asleep</span></div>
  <div class="tile"><b>${thinking}</b><span>spent thinking{avg}</span></div>
- <div class="tile"><b>${rent}</b><span>rent paid</span></div>
+ <div class="tile"><b>${rent}</b><span>food eaten</span></div>
  <div class="tile"><b class="{pnlcls}">{pnl}</b><span>trading p&amp;l</span></div>
 </div>
 <h2>Notes (the agent's only memory)</h2><pre>{notes}</pre>
 <h2>Positions</h2>{positions}
+<h2>Capabilities it has asked for</h2>{requests}
 <h2>Recent wake-ups</h2>{wakeups_table}
 <h2>Ledger</h2>{ledger}
 """
@@ -152,6 +159,10 @@ def render(snap: dict[str, Any]) -> str:
         f"<td>{e(json.dumps({k: v for k, v in x['meta'].items() if k in ('market', 'outcome', 'shares', 'price', 'won', 'effort', 'output_tokens', 'cause')}))}</td></tr>"
         for x in snap["recent_ledger"]
     )
+    rq_rows = "".join(
+        f"<tr><td class=n>{r['wakeup']}</td><td>{e(r['request'])}</td><td>{e(r['why'])}</td></tr>" for r in snap["requests"]
+    )
+    requests_html = f"<table><tr><th>#</th><th>request</th><th>why</th></tr>{rq_rows}</table>" if rq_rows else "<p>none yet</p>"
     ledger = f"<table><tr><th>when</th><th>kind</th><th>amount</th><th>balance</th><th>detail</th></tr>{led_rows}</table>"
     asleep = snap["asleep_for_s"]
     return (PAGE
@@ -166,7 +177,8 @@ def render(snap: dict[str, Any]) -> str:
             .replace("{rent}", f"{snap['rent_paid']:.3f}")
             .replace("{pnlcls}", "pos" if snap["trading_pnl"] >= 0 else "neg").replace("{pnl}", f"{snap['trading_pnl']:+.2f}")
             .replace("{notes}", e(snap["notes"]) or "(none yet)")
-            .replace("{positions}", positions).replace("{wakeups_table}", wakeups_table).replace("{ledger}", ledger))
+            .replace("{positions}", positions).replace("{requests}", requests_html)
+            .replace("{wakeups_table}", wakeups_table).replace("{ledger}", ledger))
 
 
 def serve(settings: Settings, port: int = 8787) -> None:

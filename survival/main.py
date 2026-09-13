@@ -82,11 +82,11 @@ def one_tick(agent: Agent) -> dict | None:
     """Rent, settlement, then a wake-up unless asleep. Returns the wake-up summary or None."""
     charge_rent(agent)
     if agent.ledger.is_dead:
-        die(agent, "could not pay rent")
+        die(agent, "could not pay for food")
         return None
     for ev in agent.broker.settle(agent.market.get_market):
         print("SETTLED:", json.dumps(ev))
-    if time.time() < agent.state.sleep_until:
+    if agent.settings.sleep_enabled and time.time() < agent.state.sleep_until:
         return None
     try:
         summary = agent.wake()

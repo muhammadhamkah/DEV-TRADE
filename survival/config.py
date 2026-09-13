@@ -35,8 +35,9 @@ class Settings:
     state_dir: str = os.environ.get("SURVIVAL_STATE_DIR", "state")
     # Economy
     starting_balance: float = _f("STARTING_BALANCE", "50")
-    daily_rent: float = _f("DAILY_RENT", "0.50")          # cost of living, USD per day
+    daily_rent: float = _f("DAILY_RENT", "0.50")          # food: cost of living, USD per day, charged continuously
     tick_seconds: int = _i("TICK_SECONDS", "3600")        # how often the agent wakes
+    sleep_enabled: bool = os.environ.get("SLEEP_ENABLED", "0") == "1"  # off: it must feed itself every wake-up
     # Inference
     backend: str = os.environ.get("BACKEND", "anthropic")            # anthropic | ollama | openai
     model: str = os.environ.get("SURVIVAL_MODEL", "claude-opus-5")

@@ -62,7 +62,24 @@ class Agent:
         if self.backend is None:
             self.backend = make_backend(self.settings)
         with open(PROMPT_PATH) as fh:
-            self.system_prompt = fh.read()
+            self.system_prompt = fh.read().rstrip() + "\n\n" + self.situation()
+        self.tools = [t for t in TOOLS if self.settings.sleep_enabled or t["name"] != "sleep"]
+
+    def situation(self) -> str:
+        """The rules of this particular life, generated from settings so the prompt file stays generic."""
+        s = self.settings
+        lines = [
+            "## Your situation",
+            f"- Food costs ${s.daily_rent:.2f} per day, charged continuously whether you act or not.",
+            f"- You wake every {s.tick_seconds // 3600 if s.tick_seconds >= 3600 else s.tick_seconds // 60} "
+            f"{'hour(s)' if s.tick_seconds >= 3600 else 'minute(s)'}. Every wake-up costs you inference money before you have made a single decision.",
+            f"- Orders are capped at {s.max_position_frac:.0%} of your cash and you may hold at most {s.max_open_positions} positions. The harness enforces this.",
+        ]
+        if s.sleep_enabled:
+            lines.append("- You may sleep to skip wake-ups. Sleeping costs only food, not inference.")
+        else:
+            lines.append("- You cannot sleep. There is no way to skip a wake-up. The only way to spend less on thinking is to think at lower effort and to act with fewer tool calls. The only way to survive is to earn more than you eat.")
+        return "\n".join(lines)
 
     # ---- wake-up -------------------------------------------------------------------------
 
@@ -126,7 +143,7 @@ class Agent:
     def _call(self, messages: list[dict[str, Any]]) -> Completion:
         response = self.backend.complete(
             system=self.system_prompt,
-            tools=TOOLS,
+            tools=self.tools,
             messages=messages,
             effort=self.state.effort,
             max_tokens=self.settings.max_tokens,
@@ -225,10 +242,19 @@ class Agent:
         return {"effort": level}
 
     def tool_sleep(self, args: dict[str, Any]) -> dict[str, Any]:
+        if not self.settings.sleep_enabled:
+            raise ValueError("sleep is not available in this life")
         hours = max(1.0, min(float(args["hours"]), 72.0))
         self.state.sleep_until = time.time() + hours * 3600
         self.state.save()
         return {"sleeping_hours": hours, "rent_while_asleep": round(hours / 24 * self.settings.daily_rent, 4)}
+
+    def tool_request_capability(self, args: dict[str, Any]) -> dict[str, Any]:
+        path = os.path.join(self.settings.state_dir, "requests.jsonl")
+        entry = {"ts": time.time(), "wakeup": self.state.wakeups, "request": str(args["request"])[:1000], "why": str(args["why"])[:1000]}
+        with open(path, "a") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return {"logged": True, "note": "Your operator will read this. Do not wait for it; keep trading with what you have."}
 
     def tool_write_notes(self, args: dict[str, Any]) -> dict[str, Any]:
         self.state.notes = str(args["text"])[:6000]

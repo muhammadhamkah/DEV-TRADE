@@ -119,6 +119,17 @@ TOOLS = [
         "strict": True,
     },
     {
+        "name": "request_capability",
+        "description": "Ask your operator for a tool or data source you do not have. Describe the edge you think it would give you and why you cannot get it with current tools. Requests are read by a human; nothing changes until they build it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"request": {"type": "string"}, "why": {"type": "string"}},
+            "required": ["request", "why"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "write_notes",
         "description": "Replace your notes. This is your only memory between wake-ups. Keep it short and honest.",
         "input_schema": {
