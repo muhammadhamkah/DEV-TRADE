@@ -52,6 +52,7 @@ class Settings:
     max_tool_calls_per_tick: int = _i("MAX_TOOL_CALLS_PER_TICK", "12")
     max_tokens: int = _i("MAX_TOKENS", "8000")
     enable_fallbacks: bool = os.environ.get("ENABLE_FALLBACKS", "1") == "1"
+    verbose: bool = os.environ.get("VERBOSE", "1") == "1"   # print every tool call in the run window
     # Trading guardrails (enforced by the harness, not the prompt)
     max_position_frac: float = _f("MAX_POSITION_FRAC", "0.25")  # max share of cash per order
     max_open_positions: int = _i("MAX_OPEN_POSITIONS", "6")

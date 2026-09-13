@@ -49,10 +49,12 @@ money leaving the ledger is also leaving your account.
 ```bash
 cp .env.example .env      # pick a backend and fill it in
 pip install -r requirements.txt
-python -m survival tick     # one wake-up, watch what happens
-python -m survival status   # the books
-python -m survival run      # loop forever
-python -m survival reset    # start over
+python -m survival tick       # one wake-up, watch what happens
+python -m survival run        # loop forever; prints every tool call as it happens
+python -m survival status     # the books, once
+python -m survival watch      # the books, refreshed every 30s
+python -m survival dashboard  # same thing as a web page at http://localhost:8787
+python -m survival reset      # start over
 ```
 
 For Ollama, pull the model first: `ollama pull qwen3:8b`.

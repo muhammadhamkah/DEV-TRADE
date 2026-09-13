@@ -41,7 +41,7 @@ class ScriptedClient:
 def make_agent(tmp_path, fake_market, client, cash=50, **overrides):
     settings = Settings(state_dir=str(tmp_path), starting_balance=cash, model="claude-opus-5", **overrides)
     ledger = Ledger.open(str(tmp_path / "ledger.jsonl"), cash)
-    broker = PaperBroker(ledger=ledger, path=str(tmp_path / "pos.json"), max_position_frac=0.25, max_open_positions=6, slippage_bps=50, fee_bps=0)
+    broker = PaperBroker(ledger=ledger, path=str(tmp_path / "positions.json"), max_position_frac=0.25, max_open_positions=6, slippage_bps=50, fee_bps=0)
     state = AgentState.load(str(tmp_path / "agent.json"), "medium")
     return Agent(settings=settings, ledger=ledger, broker=broker, market=fake_market, state=state, backend=client)
 

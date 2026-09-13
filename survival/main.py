@@ -2,7 +2,9 @@
 
     python -m survival run      # live forever (or until dead)
     python -m survival tick     # one wake-up, then exit
-    python -m survival status   # print the books
+    python -m survival status   # print the books once
+    python -m survival watch    # print the books every 30s
+    python -m survival dashboard  # local web page at http://localhost:8787
     python -m survival reset    # wipe state (asks for confirmation)
 """
 from __future__ import annotations
@@ -115,18 +117,11 @@ def run(settings: Settings) -> None:
 
 
 def status(settings: Settings) -> None:
-    agent = build(settings)
-    print(json.dumps({
-        "balance": agent.ledger.balance,
-        "dead": agent.ledger.is_dead,
-        "wakeups": agent.state.wakeups,
-        "effort": agent.state.effort,
-        "asleep_for_s": max(0, round(agent.state.sleep_until - time.time())),
-        "inference_spent": -agent.ledger.total("inference"),
-        "rent_paid": -agent.ledger.total("rent"),
-        "positions": [json.loads(json.dumps(p.__dict__)) for p in agent.broker.positions.values()],
-        "notes": agent.state.notes,
-    }, indent=1))
+    from .dashboard import snapshot
+    snap = snapshot(settings)
+    snap.pop("recent_ledger")
+    snap.pop("recent_wakeups")
+    print(json.dumps(snap, indent=1))
 
 
 def reset(settings: Settings) -> None:
@@ -146,6 +141,12 @@ def main(argv: list[str]) -> None:
         one_tick(build(settings))
     elif cmd == "status":
         status(settings)
+    elif cmd == "watch":
+        from .dashboard import watch
+        watch(settings, int(argv[1]) if len(argv) > 1 else 30)
+    elif cmd == "dashboard":
+        from .dashboard import serve
+        serve(settings, int(argv[1]) if len(argv) > 1 else 8787)
     elif cmd == "reset":
         reset(settings)
     else:

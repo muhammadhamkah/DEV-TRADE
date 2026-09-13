@@ -85,6 +85,8 @@ class Agent:
     def wake(self) -> dict[str, Any]:
         """Run one wake-up. Returns a summary. Raises Dead if the balance hits zero."""
         self.state.wakeups += 1
+        if self.settings.verbose:
+            print(f"\n{time.strftime('%H:%M:%S')}  wake-up #{self.state.wakeups} starting, cash {self.ledger.balance:.4f}, effort {self.state.effort}", flush=True)
         messages: list[dict[str, Any]] = [{"role": "user", "content": self.briefing()}]
         calls = 0
         ended_by = "end_turn"
@@ -128,6 +130,9 @@ class Agent:
             effort=self.state.effort,
             max_tokens=self.settings.max_tokens,
         )
+        if self.settings.verbose:
+            print(f"  {time.strftime('%H:%M:%S')}  thought for {response.usage['output_tokens']} tokens, charged ${response.cost:.4f}"
+                  + (f': "{response.text[:140]}"' if response.text else ""), flush=True)
         self.ledger.charge("inference", response.cost, {
             "wakeup": self.state.wakeups,
             "effort": self.state.effort,
@@ -145,13 +150,29 @@ class Agent:
         try:
             out = handler(args)
             self.log.append({"ts": time.time(), "tool": name, "args": args, "result": out})
+            self._say(name, args, out)
             return out, False
         except TradeRejected as exc:
             self.log.append({"ts": time.time(), "tool": name, "args": args, "rejected": str(exc)})
+            self._say(name, args, {"rejected": str(exc)})
             return {"rejected": str(exc)}, True
         except Exception as exc:  # the agent should see failures, not crash the harness
             self.log.append({"ts": time.time(), "tool": name, "args": args, "error": repr(exc)})
+            self._say(name, args, {"error": repr(exc)})
             return {"error": f"{type(exc).__name__}: {exc}"}, True
+
+    def _say(self, name: str, args: dict[str, Any], out: Any) -> None:
+        """Live trace in the run window: one line per tool call, trimmed."""
+        if not self.settings.verbose:
+            return
+        shown = json.dumps(out)
+        if isinstance(out, list):
+            shown = f"{len(out)} results"
+        elif name == "get_status":
+            shown = f"cash {out.get('cash')} net {out.get('net_worth')} positions {len(out.get('positions', []))}"
+        elif name == "get_market":
+            shown = f"{out.get('question', '')[:60]} {out.get('outcomes')}"
+        print(f"  {time.strftime('%H:%M:%S')}  {name}({json.dumps(args)[:120]}) -> {shown[:160]}", flush=True)
 
     def tool_get_status(self, args: dict[str, Any]) -> dict[str, Any]:
         marked = self.broker.mark(self.market.quote)
