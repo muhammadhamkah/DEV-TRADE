@@ -5,6 +5,23 @@ import os
 from dataclasses import dataclass
 
 
+def load_dotenv(path: str = ".env") -> None:
+    """Load KEY=VALUE lines from .env into the environment without overriding existing vars.
+    Docker Compose does this itself; this is for running `python -m survival` directly."""
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_dotenv()
+
+
 def _f(name: str, default: str) -> float:
     return float(os.environ.get(name, default))
 
