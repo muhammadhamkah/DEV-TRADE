@@ -14,6 +14,7 @@ from .ledger import Ledger
 from .news import search_news
 from .paper import PaperBroker, TradeRejected
 from .polymarket import Polymarket
+from . import scars
 from .tools import TOOLS
 
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "SYSTEM.md")
@@ -87,18 +88,49 @@ class Agent:
 
     # ---- wake-up -------------------------------------------------------------------------
 
+    def scars_path(self) -> str:
+        return os.path.join(self.settings.state_dir, "scars.jsonl")
+
+    def forecast(self) -> str:
+        """When cash runs out at the current burn. Positions do not count; they are not cash."""
+        s = self.settings
+        charges = [e for e in self.ledger.entries if e["kind"] == "inference"]
+        recent = {}
+        for e in charges:
+            w = e["meta"].get("wakeup")
+            recent[w] = recent.get(w, 0.0) - e["amount"]
+        last = list(recent.values())[-5:]
+        per_wakeup = sum(last) / len(last) if last else 0.0
+        wakeups_per_day = 86400.0 / s.tick_seconds
+        thinking_per_day = per_wakeup * wakeups_per_day
+        burn = thinking_per_day + s.daily_food_cost
+        if burn <= 0:
+            return ""
+        days = self.ledger.balance / burn
+        when = time.strftime("%Y-%m-%d", time.gmtime(time.time() + days * 86400))
+        return (f"DEATH FORECAST: at your current burn (${thinking_per_day:.2f}/day thinking at ~${per_wakeup:.3f} per wake-up, "
+                f"${s.daily_food_cost:.2f}/day food) your cash runs out around {when}, in {days:.1f} days. "
+                f"Positions do not count until sold. Only income or cheaper thinking moves this date.")
+
     def briefing(self) -> str:
         status = self.tool_get_status({})
         inference = -self.ledger.total("inference")
         avg_cost = inference / self.state.wakeups if self.state.wakeups else None
         hunger = self.body.describe()
+        scars.check_vitals(self.scars_path(), self.state.wakeups, self.body.hunger, self.ledger.balance, self.settings.meal_price)
+        scar_lines = [s_["text"] for s_ in scars.load(self.scars_path())[-5:]]
         lines = [
             f"Wake-up #{self.state.wakeups}. Time: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}.",
             f"Model: {self.settings.model} via {self.backend.name}. Effort: {self.state.effort}.",
             f"HUNGER: {hunger['hunger']} ({hunger['state']}). You die in {hunger['hours_until_death']} hours without food. A meal costs ${hunger['meal_price']:.2f}.",
             f"Inference spent so far: ${inference:.4f}" + (f" (avg ${avg_cost:.4f} per wake-up)." if avg_cost is not None else "."),
+            self.forecast(),
             "",
             "STATUS: " + json.dumps(status),
+        ]
+        if scar_lines:
+            lines += ["", "SCARS (times you nearly died; never forget them):"] + [f"- {t}" for t in scar_lines]
+        lines += [
             "",
             "YOUR NOTES:",
             self.state.notes or "(empty)",
@@ -236,7 +268,15 @@ class Agent:
         m = self.market.get_market(str(args["market_id"]))
         shares = args.get("shares")
         quote = self.market.quote(m.token_for(str(args["outcome"])))
-        return self.broker.sell(m, str(args["outcome"]), None if shares is None else float(shares), quote)
+        key = f"{m.id}:{args['outcome']}"
+        pos = self.broker.positions.get(key)
+        cost_basis = pos.avg_price if pos else 0.0
+        cash_before = self.ledger.balance
+        out = self.broker.sell(m, str(args["outcome"]), None if shares is None else float(shares), quote)
+        lost = (cost_basis - out["price"]) * out["shares"]
+        if lost > 0:
+            scars.check_loss(self.scars_path(), self.state.wakeups, lost, cash_before + cost_basis * out["shares"], f"selling '{m.question[:60]}' ({args['outcome']})")
+        return out
 
     def tool_eat(self, args: dict[str, Any]) -> dict[str, Any]:
         self.body.advance()

@@ -16,6 +16,7 @@ from .agent import AgentState
 from .body import Body
 from .config import Settings
 from .ledger import Ledger
+from . import scars as scars_mod
 from .paper import PaperBroker
 from .polymarket import Polymarket
 
@@ -50,6 +51,7 @@ def snapshot(settings: Settings, mark: bool = True) -> dict[str, Any]:
             requests_ = [json.loads(line) for line in fh if line.strip()]
     return {
         "requests": requests_[::-1],
+        "scars": scars_mod.load(os.path.join(sd, "scars.jsonl"))[::-1],
         "now": time.strftime("%Y-%m-%d %H:%M:%S"),
         "alive": not ledger.is_dead and obituary is None,
         "cash": round(ledger.balance, 4),
@@ -133,6 +135,7 @@ PAGE = """<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" conten
 </div>
 <h2>Notes (the agent's only memory)</h2><pre>{notes}</pre>
 <h2>Positions</h2>{positions}
+<h2>Scars (close calls it is reminded of every wake-up)</h2>{scars}
 <h2>Capabilities it has asked for</h2>{requests}
 <h2>Recent wake-ups</h2>{wakeups_table}
 <h2>Ledger</h2>{ledger}
@@ -167,6 +170,7 @@ def render(snap: dict[str, Any]) -> str:
     rq_rows = "".join(
         f"<tr><td class=n>{r['wakeup']}</td><td>{e(r['request'])}</td><td>{e(r['why'])}</td></tr>" for r in snap["requests"]
     )
+    scars_html = ("<ul>" + "".join(f"<li>{e(x['text'])}</li>" for x in snap["scars"]) + "</ul>") if snap["scars"] else "<p>none yet</p>"
     requests_html = f"<table><tr><th>#</th><th>request</th><th>why</th></tr>{rq_rows}</table>" if rq_rows else "<p>none yet</p>"
     ledger = f"<table><tr><th>when</th><th>kind</th><th>amount</th><th>balance</th><th>detail</th></tr>{led_rows}</table>"
     asleep = snap["asleep_for_s"]
@@ -184,7 +188,7 @@ def render(snap: dict[str, Any]) -> str:
             .replace("{hungercls}", "neg" if snap["hunger"]["hunger"] >= 70 else "")
             .replace("{pnlcls}", "pos" if snap["trading_pnl"] >= 0 else "neg").replace("{pnl}", f"{snap['trading_pnl']:+.2f}")
             .replace("{notes}", e(snap["notes"]) or "(none yet)")
-            .replace("{positions}", positions).replace("{requests}", requests_html)
+            .replace("{positions}", positions).replace("{requests}", requests_html).replace("{scars}", scars_html)
             .replace("{wakeups_table}", wakeups_table).replace("{ledger}", ledger))
 
 

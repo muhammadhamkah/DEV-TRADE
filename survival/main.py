@@ -18,6 +18,7 @@ import time
 from .agent import Agent, AgentState, Dead
 from .body import Body, Starved
 from .config import Settings
+from . import scars
 from .ledger import Ledger
 from .paper import PaperBroker
 from .polymarket import Polymarket
@@ -66,8 +67,13 @@ def one_tick(agent: Agent) -> dict | None:
     except Starved as exc:
         die(agent, str(exc))
         return None
+    cash_before = agent.ledger.balance
     for ev in agent.broker.settle(agent.market.get_market):
         print("SETTLED:", json.dumps(ev))
+        if ev.get("won") is False:
+            # a lost settlement pays 0; what it cost is in the ledger's trade_buy entries for that market
+            spent = -sum(e["amount"] for e in agent.ledger.entries if e["kind"] == "trade_buy" and e["meta"].get("market") == ev["market"] and e["meta"].get("outcome") == ev["outcome"])
+            scars.check_loss(agent.scars_path(), agent.state.wakeups, spent, cash_before + spent, f"'{ev.get('question', ev['market'])[:60]}' ({ev['outcome']})")
     if agent.settings.sleep_enabled and time.time() < agent.state.sleep_until:
         return None
     try:
