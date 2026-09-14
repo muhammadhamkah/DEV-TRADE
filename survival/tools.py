@@ -10,7 +10,7 @@ TOOLS = [
     },
     {
         "name": "list_markets",
-        "description": "Active Polymarket markets ordered by 24h volume, with current outcome prices.",
+        "description": "Active Polymarket markets ordered by 24h volume, with current outcome prices. With a query, keyword-searches the busiest 100 markets. Use one or two plain words; pass null to browse.",
         "input_schema": {
             "type": "object",
             "properties": {

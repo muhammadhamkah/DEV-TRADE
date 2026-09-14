@@ -254,9 +254,14 @@ class Agent:
         ]
         return marked
 
-    def tool_list_markets(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+    def tool_list_markets(self, args: dict[str, Any]) -> Any:
         limit = max(1, min(int(args.get("limit") or 20), 50))
-        return [m.summary() for m in self.market.list_markets(limit=limit, query=args.get("query"))]
+        query = args.get("query")
+        found = self.market.list_markets(limit=limit, query=query)
+        if not found and query:
+            return {"results": [], "hint": f"No active market mentions any of: {query!r}. Search with one plain keyword "
+                                          "(e.g. 'Fed', 'Bitcoin', 'election'), or pass query=null to see the busiest markets."}
+        return [m.summary() for m in found]
 
     def tool_get_market(self, args: dict[str, Any]) -> dict[str, Any]:
         m = self.market.get_market(str(args["market_id"]))

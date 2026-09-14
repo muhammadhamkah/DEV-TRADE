@@ -94,19 +94,26 @@ class Polymarket:
         return resp.json()
 
     def list_markets(self, limit: int = 20, query: str | None = None) -> list[Market]:
+        """Busiest active markets. With a query, searches the busiest 100 by keyword: markets matching
+        every word first, then markets matching any word."""
+        limit = max(1, min(limit, 100))
         params: dict[str, Any] = {
             "active": "true",
             "closed": "false",
-            "limit": max(1, min(limit, 100)),
+            "limit": 100 if query else limit,
             "order": "volume24hr",
             "ascending": "false",
         }
         raw = self._get(f"{self.gamma_url}/markets", params)
-        markets = [Market.from_gamma(m) for m in raw]
+        markets = [m for m in (Market.from_gamma(x) for x in raw) if m.token_ids and m.outcomes]
         if query:
-            q = query.lower()
-            markets = [m for m in markets if q in m.question.lower()]
-        return [m for m in markets if m.token_ids and m.outcomes]
+            words = [w for w in query.lower().replace(",", " ").split() if len(w) > 2]
+            if words:
+                text = {m.id: (m.question + " " + m.rules).lower() for m in markets}
+                all_words = [m for m in markets if all(w in text[m.id] for w in words)]
+                any_words = [m for m in markets if m not in all_words and any(w in text[m.id] for w in words)]
+                markets = all_words + any_words
+        return markets[:limit]
 
     def get_market(self, market_id: str) -> Market:
         return Market.from_gamma(self._get(f"{self.gamma_url}/markets/{market_id}"))

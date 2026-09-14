@@ -35,6 +35,19 @@ class FakeSession:
         return FakeResp(self.routes[url])
 
 
+def test_query_searches_the_top_100_by_word():
+    rows = [gamma_market(str(i)) for i in range(3)]
+    rows[0]["question"] = "Will the Fed cut rates in September?"
+    rows[1]["question"] = "Bitcoin above $100k by October?"
+    rows[2]["question"] = "Will the Fed hold rates and Bitcoin crash?"
+    session = FakeSession({"https://gamma/markets": rows, "https://clob/book": {"bids": [], "asks": []}})
+    pm = Polymarket("https://gamma", "https://clob", session=session)
+    got = pm.list_markets(limit=5, query="fed bitcoin")
+    assert session.calls[0][1]["limit"] == 100
+    assert [m.id for m in got] == ["2", "0", "1"]  # all-words match first, then any-word
+    assert pm.list_markets(limit=5, query="economy politics") == []
+
+
 def test_client_builds_quote_from_book():
     session = FakeSession({
         "https://gamma/markets": [gamma_market("1"), {"id": "bad", "outcomes": "[]", "clobTokenIds": "[]"}],
