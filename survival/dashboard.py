@@ -109,19 +109,24 @@ def watch(settings: Settings, every: int = 30) -> None:
 PAGE = """<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30">
 <title>survival</title>
 <style>
- body{font:15px/1.4 system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#222;background:#fafafa}
- h1{font-size:1.4rem;margin:0 0 .25rem} .sub{color:#666;margin-bottom:1.5rem}
+ :root{--bg:#000;--panel:#050a05;--line:#0f3d0f;--fg:#33ff33;--dim:#1f9e1f;--faint:#0f6b0f;--red:#ff4040;--amber:#ffb000}
+ body{font:14px/1.45 "SF Mono",Menlo,Consolas,"Liberation Mono",monospace;max-width:960px;margin:2rem auto;padding:0 1rem;color:var(--fg);background:var(--bg)}
+ h1{font-size:1.3rem;margin:0 0 .25rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+ h1::before{content:"> "} .sub{color:var(--dim);margin-bottom:1.5rem}
  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:1.5rem}
- .tile{background:#fff;border:1px solid #e3e3e3;border-radius:8px;padding:.75rem}
- .tile b{display:block;font-size:1.5rem;font-weight:600} .tile span{color:#666;font-size:.85rem}
- table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e3e3e3;border-radius:8px;margin-bottom:1.5rem}
- th,td{text-align:left;padding:.45rem .6rem;border-top:1px solid #eee;font-size:.9rem} th{border-top:0;color:#666;font-weight:500}
- td.n{text-align:right;font-variant-numeric:tabular-nums} .pos{color:#1a7f37} .neg{color:#b3261e}
- pre{background:#fff;border:1px solid #e3e3e3;border-radius:8px;padding:.75rem;white-space:pre-wrap}
- .dead{background:#b3261e;color:#fff;padding:.5rem .75rem;border-radius:8px;margin-bottom:1rem}
- h2{font-size:1rem;color:#666;margin:1.5rem 0 .5rem;font-weight:500}
+ .tile{background:var(--panel);border:1px solid var(--line);padding:.75rem}
+ .tile b{display:block;font-size:1.5rem;font-weight:700} .tile span{color:var(--dim);font-size:.8rem}
+ table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);margin-bottom:1.5rem}
+ th,td{text-align:left;padding:.45rem .6rem;border-top:1px solid var(--line);font-size:.85rem;vertical-align:top}
+ th{border-top:0;color:var(--dim);font-weight:400;text-transform:uppercase;font-size:.75rem;letter-spacing:.05em}
+ td.n{text-align:right;font-variant-numeric:tabular-nums} .pos{color:var(--fg)} .neg{color:var(--red)}
+ pre{background:var(--panel);border:1px solid var(--line);padding:.75rem;white-space:pre-wrap;color:var(--fg);font:inherit}
+ .dead{background:var(--red);color:#000;padding:.5rem .75rem;margin-bottom:1rem;font-weight:700}
+ h2{font-size:.8rem;color:var(--dim);margin:1.5rem 0 .5rem;font-weight:400;text-transform:uppercase;letter-spacing:.08em}
+ h2::before{content:"## "} p{color:var(--dim)} ul{padding-left:1.2rem} li{margin:.2rem 0}
+ .cursor::after{content:"_";animation:blink 1s steps(1) infinite} @keyframes blink{50%{opacity:0}}
 </style>
-<h1>{title}</h1><div class="sub">{model} &middot; updated {now} &middot; refreshes every 30s</div>
+<h1>{title}<span class="cursor"></span></h1><div class="sub">{model} &middot; updated {now} &middot; refreshes every 30s</div>
 {dead}
 <div class="tiles">
  <div class="tile"><b>${cash}</b><span>cash</span></div>
