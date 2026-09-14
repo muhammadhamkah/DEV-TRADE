@@ -58,7 +58,10 @@ class Body:
         return gained
 
     def eat(self, meals: int, ledger: Ledger) -> dict:
+        if self.hunger < 15:
+            raise ValueError(f"you are not hungry (hunger {self.hunger:.0f}); eating now would waste money")
         meals = max(1, min(int(meals), 5))
+        meals = min(meals, max(1, int(-(-self.hunger // self.meal_restores))))  # no more meals than hunger needs
         cost = round(meals * self.meal_price, 6)
         if cost > ledger.balance:
             affordable = int(ledger.balance // self.meal_price)

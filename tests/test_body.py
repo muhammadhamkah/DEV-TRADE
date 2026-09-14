@@ -42,3 +42,13 @@ def test_cannot_eat_more_than_you_can_afford(tmp_path):
     assert out["meals"] == 1 and abs(ledger.balance - 0.1) < 1e-9
     with pytest.raises(ValueError, match="cannot afford"):
         b.eat(1, ledger)
+
+
+def test_cannot_eat_when_full_and_cannot_overeat(tmp_path):
+    b = make(tmp_path)
+    ledger = Ledger.open(str(tmp_path / "l.jsonl"), 10)
+    with pytest.raises(ValueError, match="not hungry"):
+        b.eat(1, ledger)
+    b.hunger = 60
+    out = b.eat(5, ledger)   # asked for 5, only 2 are needed
+    assert out["meals"] == 2 and out["hunger"] == 0.0 and ledger.balance == 9.0

@@ -71,15 +71,28 @@ def test_wakeup_charges_inference_and_executes_tools(tmp_path, fake_market):
 
 def test_rejected_trade_is_reported_not_raised(tmp_path, fake_market):
     client = ScriptedClient([
-        response([block_tool("buy", {"market_id": "1", "outcome": "Yes", "usd": 40, "reason": "yolo"})], "tool_use"),
+        response([block_tool("buy", {"market_id": "1", "outcome": "Nope", "usd": 4, "reason": "yolo"})], "tool_use"),
         response([block_text("ok")], "end_turn"),
     ])
     agent = make_agent(tmp_path, fake_market, client)
     agent.wake()
     result = json.loads(client.requests[1]["messages"][2]["content"][0]["content"])
-    assert "position cap" in result["rejected"]
+    assert "outcome must be one of" in result["rejected"]
     assert client.requests[1]["messages"][2]["content"][0]["is_error"] is True
     assert agent.broker.positions == {}
+
+
+def test_repeating_the_same_failing_call_ends_the_wakeup_with_a_scar(tmp_path, fake_market):
+    bad = block_tool("buy", {"market_id": "1", "outcome": "Nope", "usd": 4, "reason": "again"})
+    client = ScriptedClient([response([bad], "tool_use") for _ in range(6)])
+    agent = make_agent(tmp_path, fake_market, client)
+    summary = agent.wake()
+    assert summary["ended_by"] == "stuck" and summary["tool_calls"] == 4
+    third = json.loads(client.requests[3]["messages"][6]["content"][0]["content"])
+    assert "WARNING" in third and "3 times" in third["WARNING"]
+    from survival import scars
+    got = scars.load(str(tmp_path / "scars.jsonl"))
+    assert got[-1]["kind"] == "wasted" and "repeating the same failing call" in got[-1]["text"]
 
 
 def test_sleep_ends_wakeup_and_sets_timer_when_enabled(tmp_path, fake_market):

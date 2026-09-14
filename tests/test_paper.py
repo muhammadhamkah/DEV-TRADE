@@ -20,17 +20,21 @@ def test_buy_fills_at_ask_plus_slippage(tmp_path, fake_market):
     assert abs(out["shares"] - 10 / (0.61 * 1.005)) < 1e-3
 
 
-def test_position_cap_is_enforced(tmp_path, fake_market):
+def test_orders_over_the_cap_are_clipped_not_rejected(tmp_path, fake_market):
     b = broker(tmp_path)
     m = fake_market.get_market("1")
-    with pytest.raises(TradeRejected, match="position cap"):
-        b.buy(m, "Yes", 12.51, fake_market.quote("tok-1-yes"))
+    out = b.buy(m, "Yes", 40, fake_market.quote("tok-1-yes"))
+    assert out["spent"] == 12.5 and out["note"].startswith("order clipped from 40.0000 to the cap of 12.5000")
+    assert b.ledger.balance == 37.5
 
 
 def test_cannot_spend_more_than_cash(tmp_path, fake_market):
     b = broker(tmp_path, cash=5, max_position_frac=1.0)
-    with pytest.raises(TradeRejected, match="insufficient cash"):
-        b.buy(fake_market.get_market("1"), "Yes", 6, fake_market.quote("tok-1-yes"))
+    out = b.buy(fake_market.get_market("1"), "Yes", 6, fake_market.quote("tok-1-yes"))
+    assert out["spent"] == 5 and b.ledger.balance == 0
+    b2 = broker(tmp_path / "b2", cash=1, max_position_frac=0.25)
+    with pytest.raises(TradeRejected, match="cannot afford"):
+        b2.buy(fake_market.get_market("1"), "Yes", 6, fake_market.quote("tok-1-yes"))
 
 
 def test_max_open_positions(tmp_path, fake_market):

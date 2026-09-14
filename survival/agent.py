@@ -146,6 +146,10 @@ class Agent:
         calls = 0
         ended_by = "end_turn"
         final_text = ""
+        notes_before = self.state.notes
+        cash_before = self.ledger.balance
+        last_sig: str | None = None
+        repeats = 0
         while True:
             response = self._call(messages)
             if self.ledger.is_dead:
@@ -163,18 +167,29 @@ class Agent:
             stop = False
             for block in tool_uses:
                 calls += 1
-                out, is_error = self._dispatch(block["name"], block.get("input") or {})
+                args = block.get("input") or {}
+                sig = block["name"] + json.dumps(args, sort_keys=True)
+                repeats = repeats + 1 if sig == last_sig else 0
+                last_sig = sig
+                out, is_error = self._dispatch(block["name"], args)
+                if repeats >= 2:
+                    out = {"result": out, "WARNING": f"You have made this exact call {repeats + 1} times in a row. It will not work. Change the input or do something else. One more repeat ends this wake-up."}
+                if repeats >= 3:
+                    stop, ended_by = True, "stuck"
                 results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(out), "is_error": is_error})
                 if block["name"] == "sleep" and not is_error:
-                    stop = True
+                    stop, ended_by = True, "sleep"
             messages.append({"role": "user", "content": results})
             if stop:
-                ended_by = "sleep"
                 break
             if calls >= self.settings.max_tool_calls_per_tick:
                 ended_by = "tool_budget"
                 break
         self.state.save()
+        if ended_by in ("tool_budget", "stuck") and self.state.notes == notes_before:
+            scars.record(self.scars_path(), self.state.wakeups, "wasted",
+                         f"Wake-up {self.state.wakeups}: you spent ${cash_before - self.ledger.balance:.2f} on {calls} tool calls, "
+                         f"{'repeating the same failing call' if ended_by == 'stuck' else 'without finishing'}, and wrote no notes. Pure waste.")
         return {"wakeup": self.state.wakeups, "tool_calls": calls, "ended_by": ended_by, "said": final_text, "balance": self.ledger.balance}
 
     def _call(self, messages: list[dict[str, Any]]) -> Completion:
@@ -261,12 +276,17 @@ class Agent:
         if usd <= 0:
             raise TradeRejected("usd must be positive")
         m = self.market.get_market(str(args["market_id"]))
-        quote = self.market.quote(m.token_for(str(args["outcome"])))
-        return self.broker.buy(m, str(args["outcome"]), usd, quote)
+        outcome = str(args["outcome"])
+        if outcome not in m.outcomes:
+            raise TradeRejected(f"outcome must be one of {m.outcomes}")
+        quote = self.market.quote(m.token_for(outcome))
+        return self.broker.buy(m, outcome, usd, quote)
 
     def tool_sell(self, args: dict[str, Any]) -> dict[str, Any]:
         m = self.market.get_market(str(args["market_id"]))
         shares = args.get("shares")
+        if str(args["outcome"]) not in m.outcomes:
+            raise TradeRejected(f"outcome must be one of {m.outcomes}")
         quote = self.market.quote(m.token_for(str(args["outcome"])))
         key = f"{m.id}:{args['outcome']}"
         pos = self.broker.positions.get(key)

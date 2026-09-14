@@ -67,11 +67,12 @@ class PaperBroker:
         if usd <= 0:
             raise TradeRejected("usd must be positive")
         cash = self.ledger.balance
-        cap = round(cash * self.max_position_frac, 4)
-        if usd > cash:
-            raise TradeRejected(f"insufficient cash: have {cash:.4f}, asked {usd:.4f}")
+        cap = round(min(cash, cash * self.max_position_frac), 4)
+        clipped_from = None
         if usd > cap:
-            raise TradeRejected(f"order exceeds position cap of {cap:.4f} ({self.max_position_frac:.0%} of cash)")
+            if cap < 0.5:
+                raise TradeRejected(f"you cannot afford a trade: cap is {cap:.4f} ({self.max_position_frac:.0%} of {cash:.4f} cash)")
+            clipped_from, usd = usd, cap
         key = self._key(market.id, outcome)
         if key not in self.positions and len(self.positions) >= self.max_open_positions:
             raise TradeRejected(f"already holding the maximum of {self.max_open_positions} positions")
@@ -106,9 +107,11 @@ class PaperBroker:
         else:
             self.positions[key] = Position(market.id, market.question, outcome, market.token_for(outcome), shares, fill)
         self._save()
+        note = "partial fill: the order book ran out of shares at reasonable prices" if usd < budget / (1 - self.fee_bps / 10_000) - 1e-6 else "full fill"
+        if clipped_from is not None:
+            note = f"order clipped from {clipped_from:.4f} to the cap of {cap:.4f} ({self.max_position_frac:.0%} of cash); " + note
         return {"filled": True, "spent": usd, "shares": round(shares, 4), "avg_price": round(fill, 4), "fee": round(fee, 6),
-                "note": "partial fill: the order book ran out of shares at reasonable prices" if usd < budget / (1 - self.fee_bps / 10_000) - 1e-6 else "full fill",
-                "cash_after": self.ledger.balance}
+                "note": note, "cash_after": self.ledger.balance}
 
     def sell(self, market: Market, outcome: str, shares: float | None, quote: dict[str, float]) -> dict[str, Any]:
         key = self._key(market.id, outcome)
