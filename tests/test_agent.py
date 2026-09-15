@@ -48,38 +48,78 @@ def make_agent(tmp_path, fake_market, client, cash=50, **overrides):
     return Agent(settings=settings, ledger=ledger, broker=broker, market=fake_market, state=state, body=body, backend=client)
 
 
+def homework(market_id="1"):
+    """The two calls a buy must be preceded by."""
+    return [
+        response([block_tool("get_market", {"market_id": market_id}, id="hw1")], "tool_use"),
+        response([block_tool("price_history", {"market_id": market_id, "outcome": "Yes", "days": 7}, id="hw2")], "tool_use"),
+    ]
+
+
 def test_wakeup_charges_inference_and_executes_tools(tmp_path, fake_market):
-    client = ScriptedClient([
+    client = ScriptedClient(homework() + [
         response([block_tool("buy", {"market_id": "1", "outcome": "Yes", "usd": 5, "reason": "edge"})], "tool_use"),
         response([block_tool("write_notes", {"text": "bought 1:Yes"}, id="tu2")], "tool_use"),
         response([block_text("done")], "end_turn"),
     ])
     agent = make_agent(tmp_path, fake_market, client)
     summary = agent.wake()
-    assert summary["tool_calls"] == 2 and summary["ended_by"] == "end_turn" and summary["said"] == "done"
-    # three calls at 1000 in / 200 out on opus-5: 3 * (0.005 + 0.005) = 0.03, plus the $5 buy
-    assert abs(agent.ledger.balance - (50 - 5 - 0.03)) < 1e-9
+    assert summary["tool_calls"] == 4 and summary["ended_by"] == "end_turn" and summary["said"] == "done"
+    # five calls at 1000 in / 200 out on opus-5: 5 * (0.005 + 0.005) = 0.05, plus the $5 buy
+    assert abs(agent.ledger.balance - (50 - 5 - 0.05)) < 1e-9
     assert list(agent.broker.positions) == ["1:Yes"]
     assert agent.state.notes == "bought 1:Yes"
     # the model was asked with the chosen effort and the tool list
     assert client.requests[0]["effort"] == "medium"
     assert {t["name"] for t in client.requests[0]["tools"]} >= {"buy", "sell", "request_capability"}
-    # rejected trades come back to the model as errors, not crashes
-    tool_result = client.requests[1]["messages"][2]["content"][0]
+    tool_result = client.requests[3]["messages"][6]["content"][0]
     assert tool_result["type"] == "tool_result" and tool_result["is_error"] is False
 
 
 def test_rejected_trade_is_reported_not_raised(tmp_path, fake_market):
-    client = ScriptedClient([
+    client = ScriptedClient(homework() + [
         response([block_tool("buy", {"market_id": "1", "outcome": "Nope", "usd": 4, "reason": "yolo"})], "tool_use"),
         response([block_text("ok")], "end_turn"),
     ])
     agent = make_agent(tmp_path, fake_market, client)
     agent.wake()
-    result = json.loads(client.requests[1]["messages"][2]["content"][0]["content"])
+    result = json.loads(client.requests[3]["messages"][6]["content"][0]["content"])
     assert "outcome must be one of" in result["rejected"]
-    assert client.requests[1]["messages"][2]["content"][0]["is_error"] is True
+    assert client.requests[3]["messages"][6]["content"][0]["is_error"] is True
     assert agent.broker.positions == {}
+
+
+def test_blind_buy_is_refused_until_homework_is_done(tmp_path, fake_market, monkeypatch):
+    from survival import agent as agent_mod
+    monkeypatch.setattr(agent_mod, "search_news", lambda q, days, limit: [{"title": "x"}])
+    client = ScriptedClient([
+        response([block_tool("buy", {"market_id": "1", "outcome": "Yes", "usd": 5, "reason": "vibes"})], "tool_use"),
+        response([block_tool("get_market", {"market_id": "1"}, id="t2")], "tool_use"),
+        response([block_tool("buy", {"market_id": "1", "outcome": "Yes", "usd": 5, "reason": "still vibes"}, id="t3")], "tool_use"),
+        response([block_tool("search_news", {"query": "thing 1", "days": 3, "limit": 3}, id="t4")], "tool_use"),
+        response([block_tool("buy", {"market_id": "1", "outcome": "Yes", "usd": 5, "reason": "news"}, id="t5")], "tool_use"),
+        response([block_text("ok")], "end_turn"),
+    ])
+    agent = make_agent(tmp_path, fake_market, client)
+    agent.wake()
+    first = json.loads(client.requests[1]["messages"][2]["content"][0]["content"])
+    assert "get_market" in first["rejected"] and "price_history" in first["rejected"]
+    second = json.loads(client.requests[3]["messages"][6]["content"][0]["content"])
+    assert "get_market" not in second["rejected"] and "search_news" in second["rejected"]
+    assert list(agent.broker.positions) == ["1:Yes"]
+
+
+def test_homework_does_not_carry_over_between_wakeups(tmp_path, fake_market):
+    client = ScriptedClient(homework() + [
+        response([block_text("looked")], "end_turn"),
+        response([block_tool("buy", {"market_id": "1", "outcome": "Yes", "usd": 5, "reason": "yesterday"})], "tool_use"),
+        response([block_text("ok")], "end_turn"),
+    ])
+    agent = make_agent(tmp_path, fake_market, client)
+    agent.wake()
+    agent.wake()
+    result = json.loads(client.requests[-1]["messages"][2]["content"][0]["content"])
+    assert "homework" in result["rejected"] and agent.broker.positions == {}
 
 
 def test_repeating_the_same_failing_call_ends_the_wakeup_with_a_scar(tmp_path, fake_market):

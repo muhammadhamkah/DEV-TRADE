@@ -48,6 +48,10 @@ class FakeMarket:
     def quote(self, token_id):
         return self.books[token_id]
 
+    def price_history(self, token_id, days=7, points=24):
+        p = self.books[token_id]["mid"]
+        return [{"t": f"09-{d:02d} 00:00", "p": round(p - 0.01 * (7 - d), 3)} for d in range(1, 8)]
+
     def resolve(self, market_id, winner):
         self.raw[market_id]["closed"] = True
         self.raw[market_id]["outcomePrices"] = json.dumps(["1", "0"] if winner == "Yes" else ["0", "1"])

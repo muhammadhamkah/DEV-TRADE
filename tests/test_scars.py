@@ -39,7 +39,8 @@ def test_briefing_carries_forecast_and_scars(tmp_path, fake_market):
 
 
 def test_selling_at_a_big_loss_leaves_a_scar(tmp_path, fake_market):
-    client = ScriptedClient([
+    from tests.test_agent import homework
+    client = ScriptedClient(homework("2") + [
         response([block_tool("buy", {"market_id": "2", "outcome": "Yes", "usd": 12, "reason": "r"})], "tool_use"),
         response([block_tool("sell", {"market_id": "2", "outcome": "Yes", "shares": None, "reason": "r"}, id="t2")], "tool_use"),
         response([block_text("done")], "end_turn"),

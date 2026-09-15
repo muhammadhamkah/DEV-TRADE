@@ -140,6 +140,7 @@ class Agent:
     def wake(self) -> dict[str, Any]:
         """Run one wake-up. Returns a summary. Raises Dead if the balance hits zero."""
         self.state.wakeups += 1
+        self.log.clear()
         if self.settings.verbose:
             print(f"\n{time.strftime('%H:%M:%S')}  wake-up #{self.state.wakeups} starting, cash {self.ledger.balance:.4f}, effort {self.state.effort}", flush=True)
         messages: list[dict[str, Any]] = [{"role": "user", "content": self.briefing()}]
@@ -276,10 +277,25 @@ class Agent:
     def tool_search_news(self, args: dict[str, Any]) -> list[dict[str, Any]]:
         return search_news(str(args["query"]), days=int(args.get("days") or 3), limit=int(args.get("limit") or 8))
 
+    def _looked_before_leaping(self, market_id: str) -> str | None:
+        """Buying blind is refused. Returns what is still missing, or None if the homework is done."""
+        calls = [(e["tool"], e.get("args") or {}) for e in self.log if "result" in e]
+        inspected = any(t == "get_market" and str(a.get("market_id")) == market_id for t, a in calls)
+        evidence = any(t == "search_news" or (t == "price_history" and str(a.get("market_id")) == market_id) for t, a in calls)
+        missing = []
+        if not inspected:
+            missing.append("get_market (read its rules and order book)")
+        if not evidence:
+            missing.append("price_history for it or search_news about it")
+        return " and ".join(missing) if missing else None
+
     def tool_buy(self, args: dict[str, Any]) -> dict[str, Any]:
         usd = float(args["usd"])
         if usd <= 0:
             raise TradeRejected("usd must be positive")
+        missing = self._looked_before_leaping(str(args["market_id"]))
+        if missing:
+            raise TradeRejected(f"you have not done your homework on this market this wake-up: call {missing} first, then buy")
         m = self.market.get_market(str(args["market_id"]))
         outcome = str(args["outcome"])
         if outcome not in m.outcomes:
