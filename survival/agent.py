@@ -106,8 +106,14 @@ class Agent:
             recent[w] = recent.get(w, 0.0) - e["amount"]
         last = list(recent.values())[-5:]
         per_wakeup = sum(last) / len(last) if last else 0.0
-        wakeups_per_day = 86400.0 / s.tick_seconds
-        thinking_per_day = per_wakeup * wakeups_per_day
+        # Measured burn: inference over the last day (or whatever history exists, at least 10 minutes), scaled to a day.
+        now = time.time()
+        window_start = max(now - 86400.0, charges[0]["ts"] if charges else now)
+        window = now - window_start
+        if window >= 600:
+            thinking_per_day = -sum(e["amount"] for e in charges if e["ts"] >= window_start) * 86400.0 / window
+        else:
+            thinking_per_day = per_wakeup * 86400.0 / max(s.tick_seconds, 600)
         burn = thinking_per_day + s.daily_food_cost
         if burn <= 0:
             return ""

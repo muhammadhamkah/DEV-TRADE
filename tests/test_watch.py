@@ -54,7 +54,7 @@ def test_run_loop_starts_and_stops_on_kill_file(tmp_path, fake_market, monkeypat
     monkeypatch.setattr(m, "make_backend", lambda s: ScriptedClient([response([block_text("hi")], "end_turn")] * 5), raising=False)
     from survival import agent as agent_mod
     monkeypatch.setattr(agent_mod, "make_backend", lambda s: ScriptedClient([response([block_text("hi")], "end_turn")] * 5))
-    settings = Settings(state_dir=str(tmp_path), backend="ollama", model="m", watch_seconds=1, tick_seconds=1)
+    settings = Settings(state_dir=str(tmp_path), backend="ollama", model="m", watch_seconds=1, tick_seconds=0)
     try:
         m.run(settings)
     except KeyboardInterrupt:

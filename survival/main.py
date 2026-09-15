@@ -174,7 +174,7 @@ def run(settings: Settings) -> None:
                 return
         else:
             marks = ", ".join(f"{p.outcome} {last_bids.get(p.token_id, p.avg_price):.3f}" for p in agent.broker.positions.values())
-            nxt = max(0, int(settings.tick_seconds - (time.time() - last_wake)))
+            nxt = max(0, int(settings.tick_seconds - (time.time() - last_wake))) if settings.tick_seconds > 0 else 0
             print(f"{time.strftime('%H:%M:%S')}  watching  cash {agent.ledger.balance:.2f}  hunger {agent.body.hunger:.0f}  "
                   f"positions [{marks or 'none'}]  watches {len(agent.state.watchlist)}  sweeps {scanner.sweeps}  next scheduled wake in {nxt // 60}m", flush=True)
         time.sleep(settings.watch_seconds)

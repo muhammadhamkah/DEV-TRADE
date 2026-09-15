@@ -39,7 +39,7 @@ class Settings:
     meal_price: float = _f("MEAL_PRICE", "0.50")          # what one meal costs
     meal_restores: float = _f("MEAL_RESTORES", "50")      # hunger points one meal removes (0..100 scale)
     starve_days: float = _f("STARVE_DAYS", "2")           # days from just-fed to dead with no food
-    tick_seconds: int = _i("TICK_SECONDS", "1800")        # scheduled wake-up interval
+    tick_seconds: int = _i("TICK_SECONDS", "1800")        # scheduled wake-up interval; 0 = wake again as soon as the last wake-up ends
     watch_seconds: int = _i("WATCH_SECONDS", "60")        # how often the harness checks the world (free)
     wake_on_move: float = _f("WAKE_ON_MOVE", "0.05")      # wake early if a held outcome's bid moves this much
     scan_seconds: int = _i("SCAN_SECONDS", "300")         # how often the free opportunity scanner sweeps the market
