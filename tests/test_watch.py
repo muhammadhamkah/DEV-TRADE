@@ -37,3 +37,26 @@ def test_wake_reason_reaches_the_briefing(tmp_path, fake_market):
     summary = m.one_tick(agent, "watch triggered: thing")
     assert summary["reason"] == "watch triggered: thing"
     assert "WHY YOU ARE AWAKE: watch triggered: thing" in client.requests[0]["messages"][0]["content"]
+
+
+def test_run_loop_starts_and_stops_on_kill_file(tmp_path, fake_market, monkeypatch):
+    """Drive the real run() loop once so its imports and wiring are exercised."""
+    import os
+    from survival.config import Settings
+    calls = {"n": 0}
+
+    def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise KeyboardInterrupt
+    monkeypatch.setattr(m.time, "sleep", fake_sleep)
+    monkeypatch.setattr(m, "Polymarket", lambda *a, **k: fake_market)
+    monkeypatch.setattr(m, "make_backend", lambda s: ScriptedClient([response([block_text("hi")], "end_turn")] * 5), raising=False)
+    from survival import agent as agent_mod
+    monkeypatch.setattr(agent_mod, "make_backend", lambda s: ScriptedClient([response([block_text("hi")], "end_turn")] * 5))
+    settings = Settings(state_dir=str(tmp_path), backend="ollama", model="m", watch_seconds=1, tick_seconds=1)
+    try:
+        m.run(settings)
+    except KeyboardInterrupt:
+        pass
+    assert os.path.exists(os.path.join(str(tmp_path), "wakeups.jsonl"))

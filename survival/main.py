@@ -22,6 +22,7 @@ from . import scars
 from .ledger import Ledger
 from .paper import PaperBroker
 from .polymarket import Polymarket
+from .scanner import Scanner
 
 
 def build(settings: Settings, backend=None) -> Agent:
