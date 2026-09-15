@@ -44,3 +44,16 @@ def test_live_trading_refuses_to_start(tmp_path):
     import pytest
     with pytest.raises(SystemExit):
         m.build(Settings(state_dir=str(tmp_path), live_trading=True))
+
+
+def test_backend_failure_skips_the_tick_instead_of_crashing(tmp_path, fake_market, capsys):
+    class Broken:
+        name = "broken"
+
+        def complete(self, **kw):
+            raise ConnectionError("refused")
+
+    agent = make_agent(tmp_path, fake_market, Broken())
+    assert m.one_tick(agent) is None
+    assert "WAKEUP FAILED" in capsys.readouterr().out
+    assert not agent.ledger.is_dead

@@ -81,6 +81,11 @@ def one_tick(agent: Agent) -> dict | None:
     except Dead as exc:
         die(agent, str(exc))
         return None
+    except Exception as exc:  # brain or network unreachable: skip this tick, try again next time
+        print(f"WAKEUP FAILED ({type(exc).__name__}): {str(exc)[:200]}")
+        print("The agent could not think this tick. Is the model backend running? Retrying next tick.")
+        agent.state.save()
+        return None
     print("WAKEUP:", json.dumps(summary))
     with open(os.path.join(agent.settings.state_dir, "wakeups.jsonl"), "a") as fh:
         fh.write(json.dumps({"summary": summary, "tools": agent.log}) + "\n")
