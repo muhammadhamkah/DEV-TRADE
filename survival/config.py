@@ -50,6 +50,7 @@ class Settings:
     backend: str = os.environ.get("BACKEND", "anthropic")            # anthropic | ollama | openai
     model: str = os.environ.get("SURVIVAL_MODEL", "claude-opus-5")
     ollama_url: str = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    ollama_model: str = os.environ.get("OLLAMA_MODEL", "")     # model for the ollama backend when it is the fallback
     ollama_num_ctx: int = _i("OLLAMA_NUM_CTX", "16384")
     ollama_think: bool = os.environ.get("OLLAMA_THINK", "1") == "1"
     openai_base_url: str = os.environ.get("OPENAI_BASE_URL", "")     # any OpenAI-compatible endpoint
@@ -59,7 +60,9 @@ class Settings:
     synthetic_price_output: float = _f("SYNTHETIC_PRICE_OUTPUT", "25")
     default_effort: str = os.environ.get("DEFAULT_EFFORT", "medium")
     max_tool_calls_per_tick: int = _i("MAX_TOOL_CALLS_PER_TICK", "20")
-    max_tokens: int = _i("MAX_TOKENS", "8000")
+    max_tokens: int = _i("MAX_TOKENS", "3000")
+    context_budget_tokens: int = _i("CONTEXT_BUDGET_TOKENS", "5000")  # prune old tool results past this (free tiers cap ~8k/min)
+    fallback_backend: str = os.environ.get("FALLBACK_BACKEND", "")     # e.g. "ollama": used when the primary is rate-limited or down
     enable_fallbacks: bool = os.environ.get("ENABLE_FALLBACKS", "1") == "1"
     verbose: bool = os.environ.get("VERBOSE", "1") == "1"   # print every tool call in the run window
     # Trading guardrails (enforced by the harness, not the prompt)

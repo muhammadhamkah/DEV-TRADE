@@ -1,7 +1,7 @@
 """Backend wire-format conversion, with a fake HTTP session. No model needed."""
 import json
 
-from survival.backends import AnthropicBackend, OllamaBackend, OpenAICompatBackend, make_backend
+from survival.backends import AnthropicBackend, Completion, OllamaBackend, OpenAICompatBackend, make_backend
 from survival.config import Settings
 from survival.tools import TOOLS
 
@@ -118,3 +118,60 @@ def test_openai_compat_waits_out_a_rate_limit(monkeypatch):
     out = OpenAICompatBackend(model="m", base_url="https://h/v1", session=session).complete(
         system="s", tools=[], messages=[{"role": "user", "content": "x"}], effort="low", max_tokens=10)
     assert out.text == "ok" and slept == [2.5] and len(session.calls) == 2
+
+
+def test_fallback_backend_switches_on_exhaustion_and_returns_later(monkeypatch):
+    from survival.backends import FallbackBackend
+
+    class Primary:
+        name = "groq"
+        calls = 0
+
+        def complete(self, **kw):
+            Primary.calls += 1
+            raise RuntimeError("openai-compat 429: tokens per day")
+
+    class Local:
+        name = "ollama"
+
+        def complete(self, **kw):
+            return Completion(content=[{"type": "text", "text": "local"}], stop_reason="end_turn", usage={}, cost=0.01)
+
+    fb = FallbackBackend(Primary(), Local(), retry_primary_after=100)
+    import survival.backends as b
+    t = {"now": 1000.0}
+    monkeypatch.setattr(b.time, "time", lambda: t["now"])
+    assert fb.complete(system="s", tools=[], messages=[], effort="low", max_tokens=1).text == "local"
+    assert fb.name == "ollama" and Primary.calls == 1
+    fb.complete(system="s", tools=[], messages=[], effort="low", max_tokens=1)
+    assert Primary.calls == 1            # still on fallback, primary not retried yet
+    t["now"] = 1200.0
+    fb.complete(system="s", tools=[], messages=[], effort="low", max_tokens=1)
+    assert Primary.calls == 2            # retried the primary after the cooldown, fell back again
+
+
+def test_fallback_backend_reraises_real_errors():
+    from survival.backends import FallbackBackend
+
+    class Primary:
+        name = "p"
+
+        def complete(self, **kw):
+            raise ValueError("bad schema")
+
+    class Local:
+        name = "l"
+
+        def complete(self, **kw):
+            raise AssertionError("should not be called")
+
+    import pytest
+    with pytest.raises(ValueError):
+        FallbackBackend(Primary(), Local()).complete(system="s", tools=[], messages=[], effort="low", max_tokens=1)
+
+
+def test_make_backend_builds_fallback_chain():
+    from survival.backends import FallbackBackend
+    from survival.config import Settings
+    b = make_backend(Settings(backend="openai", model="m", openai_base_url="https://h/v1", fallback_backend="ollama", ollama_model="q"))
+    assert isinstance(b, FallbackBackend) and b.fallback.model == "q"

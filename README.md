@@ -44,6 +44,9 @@ The harness runs on any of three backends. Set `BACKEND` in `.env`:
 | `openai` | free tiers exist | synthetic price per token | Any OpenAI-compatible endpoint: Groq, Gemini, OpenRouter, vLLM. |
 | `anthropic` | real API credits | the real inference cost | Claude. Set a spend cap on the key. |
 
+Set `FALLBACK_BACKEND` to hand over to a second brain when the first is rate-limited or down,
+for example a big model on Groq's free tier by day and local Ollama when the daily cap is hit.
+
 With a free backend the agent is still charged for every token at `SYNTHETIC_PRICE_*`
 rates, so the survival pressure is identical. The only thing that changes is whether the
 money leaving the ledger is also leaving your account.

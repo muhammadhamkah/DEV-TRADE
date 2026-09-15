@@ -354,21 +354,58 @@ class OpenAICompatBackend:
 
 
 # ---------------------------------------------------------------------------------------------
+# Fallback: a good brain that runs out (free-tier caps, outages) hands over to a cheaper one.
 
 
-def make_backend(settings) -> Backend:
-    if settings.backend == "anthropic":
+@dataclass
+class FallbackBackend:
+    primary: Any
+    fallback: Any
+    name: str = ""
+    active: str = "primary"
+    retry_primary_after: float = 900.0   # seconds before trying the primary again
+    _failed_at: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.name = f"{self.primary.name}+{self.fallback.name}"
+
+    @staticmethod
+    def _is_exhaustion(exc: Exception) -> bool:
+        text = str(exc)
+        return any(k in text for k in ("429", "413", "Rate limit", "tokens per day", "Request too large", "ConnectionError", "Failed to establish", "refused"))
+
+    def complete(self, **kw) -> Completion:
+        now = time.time()
+        if self.active == "fallback" and now - self._failed_at >= self.retry_primary_after:
+            self.active = "primary"
+        if self.active == "primary":
+            try:
+                out = self.primary.complete(**kw)
+                self.name = self.primary.name
+                return out
+            except Exception as exc:
+                if not self._is_exhaustion(exc):
+                    raise
+                print(f"  primary brain unavailable ({str(exc)[:80]}); falling back to {self.fallback.name}", flush=True)
+                self.active, self._failed_at = "fallback", now
+        out = self.fallback.complete(**kw)
+        self.name = self.fallback.name
+        return out
+
+
+def _single_backend(settings, kind: str) -> Backend:
+    if kind == "anthropic":
         return AnthropicBackend(model=settings.model, enable_fallbacks=settings.enable_fallbacks)
-    if settings.backend == "ollama":
+    if kind == "ollama":
         return OllamaBackend(
-            model=settings.model,
+            model=settings.ollama_model or settings.model,
             url=settings.ollama_url,
             price_input=settings.synthetic_price_input,
             price_output=settings.synthetic_price_output,
             num_ctx=settings.ollama_num_ctx,
             think=settings.ollama_think,
         )
-    if settings.backend == "openai":
+    if kind == "openai":
         if not settings.openai_base_url:
             raise SystemExit("BACKEND=openai needs OPENAI_BASE_URL (e.g. https://api.groq.com/openai/v1)")
         return OpenAICompatBackend(
@@ -378,4 +415,11 @@ def make_backend(settings) -> Backend:
             price_input=settings.synthetic_price_input,
             price_output=settings.synthetic_price_output,
         )
-    raise SystemExit(f"unknown BACKEND={settings.backend!r}; use 'anthropic', 'ollama' or 'openai'")
+    raise SystemExit(f"unknown backend {kind!r}; use 'anthropic', 'ollama' or 'openai'")
+
+
+def make_backend(settings) -> Backend:
+    primary = _single_backend(settings, settings.backend)
+    if settings.fallback_backend and settings.fallback_backend != settings.backend:
+        return FallbackBackend(primary, _single_backend(settings, settings.fallback_backend))
+    return primary

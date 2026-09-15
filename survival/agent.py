@@ -244,7 +244,27 @@ class Agent:
                          f"{'repeating the same failing call' if ended_by == 'stuck' else 'without finishing'}, and wrote no notes. Pure waste.")
         return {"wakeup": self.state.wakeups, "reason": reason, "tool_calls": calls, "ended_by": ended_by, "said": final_text, "balance": self.ledger.balance}
 
+    @staticmethod
+    def _estimate_tokens(messages: list[dict[str, Any]]) -> int:
+        return len(json.dumps(messages)) // 4
+
+    def _prune(self, messages: list[dict[str, Any]]) -> None:
+        """Keep the wake-up under the context budget by stubbing out old tool results, oldest first.
+        The last two tool-result messages are always kept intact."""
+        budget = self.settings.context_budget_tokens
+        if self._estimate_tokens(messages) <= budget:
+            return
+        result_idx = [i for i, m in enumerate(messages) if m["role"] == "user" and isinstance(m["content"], list)]
+        for i in result_idx[:-2]:
+            for block in messages[i]["content"]:
+                if block.get("type") == "tool_result" and not str(block.get("content", "")).startswith("[pruned"):
+                    raw = str(block.get("content", ""))
+                    block["content"] = f"[pruned to save context: this result was {len(raw)} chars; act on what you already concluded from it]"
+            if self._estimate_tokens(messages) <= budget:
+                return
+
     def _call(self, messages: list[dict[str, Any]]) -> Completion:
+        self._prune(messages)
         response = self.backend.complete(
             system=self.system_prompt,
             tools=self.tools,
@@ -324,10 +344,11 @@ class Agent:
 
     def tool_price_history(self, args: dict[str, Any]) -> list[dict[str, Any]]:
         m = self.market.get_market(str(args["market_id"]))
-        return self.market.price_history(m.token_for(str(args["outcome"])), days=int(args.get("days") or 7))
+        return self.market.price_history(m.token_for(str(args["outcome"])), days=int(args.get("days") or 7), points=12)
 
     def tool_search_news(self, args: dict[str, Any]) -> list[dict[str, Any]]:
-        return search_news(str(args["query"]), days=int(args.get("days") or 3), limit=int(args.get("limit") or 8))
+        items = search_news(str(args["query"]), days=int(args.get("days") or 3), limit=min(int(args.get("limit") or 5), 6))
+        return [{"title": i.get("title", ""), "source": i.get("source", ""), "when": (i.get("published") or "")[:16], "snippet": (i.get("snippet") or "")[:160]} for i in items]
 
     def _looked_before_leaping(self, market_id: str) -> str | None:
         """Buying blind is refused. Returns what is still missing, or None if the homework is done."""

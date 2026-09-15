@@ -210,7 +210,7 @@ def test_news_tool_is_wired(tmp_path, fake_market, monkeypatch):
     agent = make_agent(tmp_path, fake_market, client)
     agent.wake()
     result = json.loads(client.requests[1]["messages"][2]["content"][0]["content"])
-    assert result == [{"title": "fed 2 3"}]
+    assert result[0]["title"] == "fed 2 3"
     assert {t["name"] for t in client.requests[0]["tools"]} >= {"search_news", "get_market"}
 
 
@@ -241,3 +241,18 @@ def test_briefing_carries_harness_record_of_last_wakeup(tmp_path, fake_market):
     assert "LAST WAKE-UP, AS RECORDED BY THE HARNESS" in second
     assert "buy({\"market_id\": \"1\", \"outcome\": \"Yes\", \"usd\": 5}) REFUSED: you have not done your homework" in second
     assert "write_notes({}) OK" in second
+
+
+def test_context_is_pruned_to_budget(tmp_path, fake_market):
+    big = "x" * 4000
+    client = ScriptedClient([
+        response([block_tool("search_news", {"query": "a", "days": 1, "limit": 1}, id=f"t{i}")], "tool_use") for i in range(4)
+    ] + [response([block_text("ok")], "end_turn")])
+    from survival import agent as agent_mod
+    agent = make_agent(tmp_path, fake_market, client, context_budget_tokens=3000)
+    agent.tool_search_news = lambda args: [{"title": big}]
+    agent.wake()
+    msgs = client.requests[-1]["messages"]
+    results = [m for m in msgs if m["role"] == "user" and isinstance(m["content"], list)]
+    assert results[0]["content"][0]["content"].startswith("[pruned")
+    assert not results[-1]["content"][0]["content"].startswith("[pruned")
