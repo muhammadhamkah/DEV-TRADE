@@ -247,12 +247,14 @@ class OpenAICompatBackend:
         return out
 
     def complete(self, *, system, tools, messages, effort, max_tokens) -> Completion:
-        body = {
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": self._messages(system, messages),
             "tools": OllamaBackend._tools(tools),
             "max_tokens": max_tokens,
         }
+        if "gpt-oss" in self.model:  # reasoning models on Groq/OpenAI-compatible hosts take graded effort
+            body["reasoning_effort"] = effort
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         resp = self.session.post(f"{self.base_url}/chat/completions", json=body, headers=headers, timeout=self.timeout)
         if resp.status_code >= 400:

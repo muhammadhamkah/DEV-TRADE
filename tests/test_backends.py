@@ -94,3 +94,13 @@ def test_make_backend_selects_by_setting(monkeypatch):
     assert isinstance(make_backend(Settings(backend="openai", model="x", openai_base_url="https://h/v1")), OpenAICompatBackend)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert isinstance(make_backend(Settings(backend="anthropic", model="claude-opus-5")), AnthropicBackend)
+
+
+def test_openai_compat_sends_reasoning_effort_for_gpt_oss():
+    session = FakeSession([FakeResp({"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}], "usage": {}})] * 2)
+    OpenAICompatBackend(model="openai/gpt-oss-120b", base_url="https://h/v1", session=session).complete(
+        system="s", tools=[], messages=[{"role": "user", "content": "x"}], effort="high", max_tokens=10)
+    assert session.calls[0]["body"]["reasoning_effort"] == "high"
+    OpenAICompatBackend(model="llama-3.3-70b-versatile", base_url="https://h/v1", session=session).complete(
+        system="s", tools=[], messages=[{"role": "user", "content": "x"}], effort="high", max_tokens=10)
+    assert "reasoning_effort" not in session.calls[1]["body"]
