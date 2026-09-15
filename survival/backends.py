@@ -8,6 +8,8 @@ Neutral format:
 from __future__ import annotations
 
 import json
+import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -149,6 +151,39 @@ class OllamaBackend:
             raise RuntimeError(f"ollama {resp.status_code}: {resp.text[:300]}")
         return resp.json()
 
+    max_wait_total: float = 300.0  # give up on a rate limit after this many seconds of waiting
+
+    def _post_with_backoff(self, body: dict, headers: dict) -> dict:
+        """Free tiers rate-limit by the minute. Wait as told and continue the same wake-up instead of losing it."""
+        waited = 0.0
+        attempt = 0
+        while True:
+            resp = self.session.post(f"{self.base_url}/chat/completions", json=body, headers=headers, timeout=self.timeout)
+            if resp.status_code == 429 and waited < self.max_wait_total:
+                delay = self._retry_delay(resp, attempt)
+                print(f"  rate limited by {self.name}; waiting {delay:.0f}s", flush=True)
+                time.sleep(delay)
+                waited += delay
+                attempt += 1
+                continue
+            if resp.status_code >= 400:
+                raise RuntimeError(f"{self.name} {resp.status_code}: {resp.text[:300]}")
+            return resp.json()
+
+    @staticmethod
+    def _retry_delay(resp, attempt: int) -> float:
+        header = resp.headers.get("retry-after") if hasattr(resp, "headers") and resp.headers else None
+        if header:
+            try:
+                return min(90.0, float(header) + 1.0)
+            except ValueError:
+                pass
+        m = re.search(r"try again in ([\d.]+)(ms|s)", getattr(resp, "text", "") or "")
+        if m:
+            secs = float(m.group(1)) / (1000.0 if m.group(2) == "ms" else 1.0)
+            return min(90.0, secs + 1.0)
+        return min(90.0, 10.0 * (attempt + 1))
+
     def complete(self, *, system, tools, messages, effort, max_tokens) -> Completion:
         body: dict[str, Any] = {
             "model": self.model,
@@ -246,6 +281,39 @@ class OpenAICompatBackend:
                         out.append({"role": "user", "content": b["text"]})
         return out
 
+    max_wait_total: float = 300.0  # give up on a rate limit after this many seconds of waiting
+
+    def _post_with_backoff(self, body: dict, headers: dict) -> dict:
+        """Free tiers rate-limit by the minute. Wait as told and continue the same wake-up instead of losing it."""
+        waited = 0.0
+        attempt = 0
+        while True:
+            resp = self.session.post(f"{self.base_url}/chat/completions", json=body, headers=headers, timeout=self.timeout)
+            if resp.status_code == 429 and waited < self.max_wait_total:
+                delay = self._retry_delay(resp, attempt)
+                print(f"  rate limited by {self.name}; waiting {delay:.0f}s", flush=True)
+                time.sleep(delay)
+                waited += delay
+                attempt += 1
+                continue
+            if resp.status_code >= 400:
+                raise RuntimeError(f"{self.name} {resp.status_code}: {resp.text[:300]}")
+            return resp.json()
+
+    @staticmethod
+    def _retry_delay(resp, attempt: int) -> float:
+        header = resp.headers.get("retry-after") if hasattr(resp, "headers") and resp.headers else None
+        if header:
+            try:
+                return min(90.0, float(header) + 1.0)
+            except ValueError:
+                pass
+        m = re.search(r"try again in ([\d.]+)(ms|s)", getattr(resp, "text", "") or "")
+        if m:
+            secs = float(m.group(1)) / (1000.0 if m.group(2) == "ms" else 1.0)
+            return min(90.0, secs + 1.0)
+        return min(90.0, 10.0 * (attempt + 1))
+
     def complete(self, *, system, tools, messages, effort, max_tokens) -> Completion:
         body: dict[str, Any] = {
             "model": self.model,
@@ -256,10 +324,7 @@ class OpenAICompatBackend:
         if "gpt-oss" in self.model:  # reasoning models on Groq/OpenAI-compatible hosts take graded effort
             body["reasoning_effort"] = effort
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-        resp = self.session.post(f"{self.base_url}/chat/completions", json=body, headers=headers, timeout=self.timeout)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"{self.name} {resp.status_code}: {resp.text[:300]}")
-        data = resp.json()
+        data = self._post_with_backoff(body, headers)
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message", {})
         content: list[dict[str, Any]] = []

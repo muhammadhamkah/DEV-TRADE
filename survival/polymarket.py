@@ -64,16 +64,18 @@ class Market:
         return self.token_ids[idx]
 
     def summary(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "id": self.id,
             "question": self.question,
-            "outcomes": dict(zip(self.outcomes, self.prices)),
-            "end_date": self.end_date,
-            "volume_24h": round(self.volume_24h, 2),
-            "liquidity": round(self.liquidity, 2),
-            "closed": self.closed,
-            "resolved_outcome": self.resolved_outcome,
+            "outcomes": {o: round(p, 3) for o, p in zip(self.outcomes, self.prices)},
+            "ends": (self.end_date or "")[:10],
+            "vol24h": int(self.volume_24h),
+            "liq": int(self.liquidity),
         }
+        if self.closed:
+            out["closed"] = True
+            out["resolved_outcome"] = self.resolved_outcome
+        return out
 
     def detail(self) -> dict[str, Any]:
         out = self.summary()

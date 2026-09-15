@@ -104,3 +104,17 @@ def test_openai_compat_sends_reasoning_effort_for_gpt_oss():
     OpenAICompatBackend(model="llama-3.3-70b-versatile", base_url="https://h/v1", session=session).complete(
         system="s", tools=[], messages=[{"role": "user", "content": "x"}], effort="high", max_tokens=10)
     assert "reasoning_effort" not in session.calls[1]["body"]
+
+
+def test_openai_compat_waits_out_a_rate_limit(monkeypatch):
+    class Limited(FakeResp):
+        def __init__(self):
+            super().__init__({"error": {"message": "Rate limit reached. Please try again in 1.5s."}}, status=429)
+            self.headers = {}
+    session = FakeSession([Limited(), FakeResp({"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}], "usage": {}})])
+    slept = []
+    import survival.backends as b
+    monkeypatch.setattr(b.time, "sleep", lambda s: slept.append(s))
+    out = OpenAICompatBackend(model="m", base_url="https://h/v1", session=session).complete(
+        system="s", tools=[], messages=[{"role": "user", "content": "x"}], effort="low", max_tokens=10)
+    assert out.text == "ok" and slept == [2.5] and len(session.calls) == 2
