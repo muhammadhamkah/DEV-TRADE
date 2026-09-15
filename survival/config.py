@@ -42,6 +42,9 @@ class Settings:
     tick_seconds: int = _i("TICK_SECONDS", "1800")        # scheduled wake-up interval
     watch_seconds: int = _i("WATCH_SECONDS", "60")        # how often the harness checks the world (free)
     wake_on_move: float = _f("WAKE_ON_MOVE", "0.05")      # wake early if a held outcome's bid moves this much
+    scan_seconds: int = _i("SCAN_SECONDS", "300")         # how often the free opportunity scanner sweeps the market
+    scan_move: float = _f("SCAN_MOVE", "0.08")            # price jump between sweeps that counts as a lead
+    scan_arb: float = _f("SCAN_ARB", "0.03")              # 1 - (Yes+No) that counts as a lead
     sleep_enabled: bool = os.environ.get("SLEEP_ENABLED", "0") == "1"  # off: it must feed itself every wake-up
     # Inference
     backend: str = os.environ.get("BACKEND", "anthropic")            # anthropic | ollama | openai

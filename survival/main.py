@@ -139,6 +139,7 @@ def run(settings: Settings) -> None:
     obit = os.path.join(settings.state_dir, "OBITUARY.json")
     last_wake = 0.0
     last_bids: dict[str, float] = {}
+    scanner = Scanner(agent.market, every_seconds=settings.scan_seconds, move_threshold=settings.scan_move, arb_threshold=settings.scan_arb)
     while True:
         if os.path.exists(kill):
             print("KILL file present; frozen. Remove it to resume.")
@@ -156,6 +157,12 @@ def run(settings: Settings) -> None:
         reasons, last_bids = watch(agent, last_bids)
         if settled:
             reasons.append("a market you held just settled")
+        if scanner.due():
+            leads = scanner.sweep()
+            if leads and scanner.sweeps > 1:  # the first sweep only establishes a baseline for movers
+                reasons.extend("LEAD " + x for x in leads)
+            elif leads:
+                reasons.extend("LEAD " + x for x in leads if "arbitrage" in x)
         due = time.time() - last_wake >= settings.tick_seconds
         if due:
             reasons.insert(0, "scheduled wake-up")
@@ -168,7 +175,7 @@ def run(settings: Settings) -> None:
             marks = ", ".join(f"{p.outcome} {last_bids.get(p.token_id, p.avg_price):.3f}" for p in agent.broker.positions.values())
             nxt = max(0, int(settings.tick_seconds - (time.time() - last_wake)))
             print(f"{time.strftime('%H:%M:%S')}  watching  cash {agent.ledger.balance:.2f}  hunger {agent.body.hunger:.0f}  "
-                  f"positions [{marks or 'none'}]  watches {len(agent.state.watchlist)}  next scheduled wake in {nxt // 60}m", flush=True)
+                  f"positions [{marks or 'none'}]  watches {len(agent.state.watchlist)}  sweeps {scanner.sweeps}  next scheduled wake in {nxt // 60}m", flush=True)
         time.sleep(settings.watch_seconds)
 
 

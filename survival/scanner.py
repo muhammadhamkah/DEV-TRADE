@@ -1,0 +1,50 @@
+"""Free opportunity scanner. Runs in the harness, no model. Sweeps the busiest markets and reports
+sharp moves since the last sweep and books where Yes plus No sell for less than a dollar."""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+from .polymarket import Polymarket
+
+
+@dataclass
+class Scanner:
+    market: Polymarket
+    every_seconds: int = 300
+    move_threshold: float = 0.08   # absolute price change between sweeps that counts as a lead
+    arb_threshold: float = 0.03    # 1 - (Yes + No) that counts as a lead
+    last_prices: dict[str, list[float]] = field(default_factory=dict)
+    last_run: float = 0.0
+    sweeps: int = 0
+
+    def due(self, now: float | None = None) -> bool:
+        return (now or time.time()) - self.last_run >= self.every_seconds
+
+    def sweep(self, now: float | None = None) -> list[str]:
+        """Returns lead strings for the agent's wake-up reason. Empty when nothing stands out."""
+        now = now or time.time()
+        self.last_run = now
+        try:
+            markets = self.market.list_markets(limit=100)
+        except Exception:
+            return []
+        leads: list[dict[str, Any]] = []
+        for m in markets:
+            if not m.prices or m.closed:
+                continue
+            prev = self.last_prices.get(m.id)
+            if prev and len(prev) == len(m.prices):
+                idx = max(range(len(m.prices)), key=lambda i: abs(m.prices[i] - prev[i]))
+                delta = m.prices[idx] - prev[idx]
+                if abs(delta) >= self.move_threshold:
+                    leads.append({"score": abs(delta), "text": f"mover: '{m.question[:60]}' {m.outcomes[idx]} {prev[idx]:.2f}->{m.prices[idx]:.2f} (id {m.id})"})
+            if len(m.prices) == 2:
+                gap = 1.0 - sum(m.prices)
+                if gap >= self.arb_threshold:
+                    leads.append({"score": gap, "text": f"possible arbitrage: '{m.question[:60]}' Yes+No = {sum(m.prices):.2f} (id {m.id}); check the asks and depth"})
+            self.last_prices[m.id] = list(m.prices)
+        self.sweeps += 1
+        leads.sort(key=lambda x: -x["score"])
+        return [x["text"] for x in leads[:3]]

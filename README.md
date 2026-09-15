@@ -4,7 +4,7 @@ An experiment. A Claude agent is given a small cash stake and one rule: **stay a
 
 - Every time it thinks, the real cost of that inference is deducted from its balance.
 - It gets hungry. It has to buy meals with cash, and if hunger hits the limit it starves. Nobody feeds it.
-- The harness watches the world every minute for free and wakes the agent on a schedule or the moment something happens: a held position moves, a market settles, hunger gets serious, or a price it asked to watch crosses a line. Thinking costs money; watching does not.
+- The harness watches the world every minute for free and wakes the agent on a schedule or the moment something happens: a held position moves, a market settles, hunger gets serious, or a price it asked to watch crosses a line. Every five minutes it also sweeps the busiest hundred markets and wakes the agent with a lead when a price jumps or Yes plus No sell under a dollar. Thinking costs money; watching does not.
 - By default it cannot sleep through wake-ups. Set `SLEEP_ENABLED=1` for the gentler version.
 - Its only income is trading on Polymarket prediction markets.
 - When the balance hits zero, or it starves, it dies. No deposits, no bailouts.
