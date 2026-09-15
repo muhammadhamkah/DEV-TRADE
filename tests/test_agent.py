@@ -178,7 +178,7 @@ def test_thinking_costs_money_and_can_kill(tmp_path, fake_market):
 
 
 def test_tool_budget_stops_runaway_loops_and_warns_first(tmp_path, fake_market):
-    client = ScriptedClient([response([block_tool("get_status", {}, id=f"t{i}")], "tool_use") for i in range(6)])
+    client = ScriptedClient([response([block_tool("list_markets", {"query": None, "limit": i + 1}, id=f"t{i}")], "tool_use") for i in range(6)])
     agent = make_agent(tmp_path, fake_market, client, max_tool_calls_per_tick=4)
     summary = agent.wake()
     assert summary["ended_by"] == "tool_budget" and summary["tool_calls"] == 4
