@@ -60,24 +60,20 @@ def die(agent: Agent, cause: str) -> None:
     print("DEAD:", json.dumps(obit, indent=1))
 
 
-def one_tick(agent: Agent) -> dict | None:
+def one_tick(agent: Agent, reason: str = "scheduled wake-up") -> dict | None:
     """Hunger, settlement, then a wake-up unless asleep. Returns the wake-up summary or None."""
     try:
         agent.body.advance()
     except Starved as exc:
         die(agent, str(exc))
         return None
-    cash_before = agent.ledger.balance
-    for ev in agent.broker.settle(agent.market.get_market):
-        print("SETTLED:", json.dumps(ev))
-        if ev.get("won") is False:
-            # a lost settlement pays 0; what it cost is in the ledger's trade_buy entries for that market
-            spent = -sum(e["amount"] for e in agent.ledger.entries if e["kind"] == "trade_buy" and e["meta"].get("market") == ev["market"] and e["meta"].get("outcome") == ev["outcome"])
-            scars.check_loss(agent.scars_path(), agent.state.wakeups, spent, cash_before + spent, f"'{ev.get('question', ev['market'])[:60]}' ({ev['outcome']})")
+    settled = settle(agent)
+    if settled:
+        reason = f"{reason}; settled: " + "; ".join(f"{e['outcome']} {'WON' if e['won'] else 'LOST'} on '{e.get('question', '')[:50]}'" for e in settled if "won" in e)
     if agent.settings.sleep_enabled and time.time() < agent.state.sleep_until:
         return None
     try:
-        summary = agent.wake()
+        summary = agent.wake(reason)
     except Dead as exc:
         die(agent, str(exc))
         return None
@@ -93,20 +89,87 @@ def one_tick(agent: Agent) -> dict | None:
     return summary
 
 
+def settle(agent: Agent) -> list[dict]:
+    cash_before = agent.ledger.balance
+    events = agent.broker.settle(agent.market.get_market)
+    for ev in events:
+        print("SETTLED:", json.dumps(ev))
+        if ev.get("won") is False:
+            # a lost settlement pays 0; what it cost is in the ledger's trade_buy entries for that market
+            spent = -sum(e["amount"] for e in agent.ledger.entries if e["kind"] == "trade_buy" and e["meta"].get("market") == ev["market"] and e["meta"].get("outcome") == ev["outcome"])
+            scars.check_loss(agent.scars_path(), agent.state.wakeups, spent, cash_before + spent, f"'{ev.get('question', ev['market'])[:60]}' ({ev['outcome']})")
+    return events
+
+
+def watch(agent: Agent, last_bids: dict[str, float]) -> tuple[list[str], dict[str, float]]:
+    """One free look at the world. Returns reasons to wake the agent (maybe none) and the new bids."""
+    reasons: list[str] = []
+    bids: dict[str, float] = {}
+    s = agent.settings
+    for pos in agent.broker.positions.values():
+        try:
+            bid = agent.market.quote(pos.token_id)["bid"]
+        except Exception:
+            continue
+        bids[pos.token_id] = bid
+        prev = last_bids.get(pos.token_id)
+        if prev is not None and abs(bid - prev) >= s.wake_on_move:
+            reasons.append(f"your position '{pos.question[:50]}' ({pos.outcome}) moved from {prev:.3f} to {bid:.3f}")
+    for w in agent.state.watchlist:
+        try:
+            q = agent.market.quote(w["token_id"])
+        except Exception:
+            continue
+        mid = q["mid"]
+        bids[w["token_id"]] = mid
+        if w.get("below") is not None and mid <= w["below"]:
+            reasons.append(f"watch triggered: '{w['question'][:50]}' ({w['outcome']}) is {mid:.3f}, below your {w['below']}")
+        elif w.get("above") is not None and mid >= w["above"]:
+            reasons.append(f"watch triggered: '{w['question'][:50]}' ({w['outcome']}) is {mid:.3f}, above your {w['above']}")
+    if agent.body.hunger >= 70 and last_bids.get("__hunger_warned__", 0) < 70:
+        reasons.append(f"you are very hungry (hunger {agent.body.hunger:.0f})")
+    bids["__hunger_warned__"] = agent.body.hunger
+    return reasons, bids
+
+
 def run(settings: Settings) -> None:
+    """Watch the world every WATCH_SECONDS for free; wake the agent on schedule or when something happens."""
     agent = build(settings)
     kill = os.path.join(settings.state_dir, "KILL")
+    obit = os.path.join(settings.state_dir, "OBITUARY.json")
+    last_wake = 0.0
+    last_bids: dict[str, float] = {}
     while True:
         if os.path.exists(kill):
             print("KILL file present; frozen. Remove it to resume.")
-        elif os.path.exists(os.path.join(settings.state_dir, "OBITUARY.json")):
+            time.sleep(settings.watch_seconds)
+            continue
+        if os.path.exists(obit):
             print("Agent is dead. Run `python -m survival reset` to start over.")
             return
-        else:
-            one_tick(agent)
-            if agent.ledger.is_dead or os.path.exists(os.path.join(settings.state_dir, "OBITUARY.json")):
+        try:
+            agent.body.advance()
+        except Starved as exc:
+            die(agent, str(exc))
+            return
+        settled = settle(agent)
+        reasons, last_bids = watch(agent, last_bids)
+        if settled:
+            reasons.append("a market you held just settled")
+        due = time.time() - last_wake >= settings.tick_seconds
+        if due:
+            reasons.insert(0, "scheduled wake-up")
+        if reasons:
+            one_tick(agent, "; ".join(reasons))
+            last_wake = time.time()
+            if agent.ledger.is_dead or os.path.exists(obit):
                 return
-        time.sleep(settings.tick_seconds)
+        else:
+            marks = ", ".join(f"{p.outcome} {last_bids.get(p.token_id, p.avg_price):.3f}" for p in agent.broker.positions.values())
+            nxt = max(0, int(settings.tick_seconds - (time.time() - last_wake)))
+            print(f"{time.strftime('%H:%M:%S')}  watching  cash {agent.ledger.balance:.2f}  hunger {agent.body.hunger:.0f}  "
+                  f"positions [{marks or 'none'}]  watches {len(agent.state.watchlist)}  next scheduled wake in {nxt // 60}m", flush=True)
+        time.sleep(settings.watch_seconds)
 
 
 def status(settings: Settings) -> None:

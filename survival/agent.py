@@ -32,6 +32,11 @@ class AgentState:
     notes: str = ""
     sleep_until: float = 0.0
     wakeups: int = 0
+    watchlist: list = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.watchlist is None:
+            self.watchlist = []
 
     @classmethod
     def load(cls, path: str, default_effort: str) -> "AgentState":
@@ -47,7 +52,7 @@ class AgentState:
     def save(self) -> None:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         with open(self.path, "w") as fh:
-            json.dump({"effort": self.effort, "notes": self.notes, "sleep_until": self.sleep_until, "wakeups": self.wakeups}, fh, indent=1)
+            json.dump({"effort": self.effort, "notes": self.notes, "sleep_until": self.sleep_until, "wakeups": self.wakeups, "watchlist": self.watchlist}, fh, indent=1)
 
 
 @dataclass
@@ -112,7 +117,7 @@ class Agent:
                 f"${s.daily_food_cost:.2f}/day food) your cash runs out around {when}, in {days:.1f} days. "
                 f"Positions do not count until sold. Only income or cheaper thinking moves this date.")
 
-    def briefing(self) -> str:
+    def briefing(self, reason: str = "scheduled wake-up") -> str:
         status = self.tool_get_status({})
         inference = -self.ledger.total("inference")
         avg_cost = inference / self.state.wakeups if self.state.wakeups else None
@@ -121,6 +126,7 @@ class Agent:
         scar_lines = [s_["text"] for s_ in scars.load(self.scars_path())[-5:]]
         lines = [
             f"Wake-up #{self.state.wakeups}. Time: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}.",
+            f"WHY YOU ARE AWAKE: {reason}",
             f"Model: {self.settings.model} via {self.backend.name}. Effort: {self.state.effort}.",
             f"HUNGER: {hunger['hunger']} ({hunger['state']}). You die in {hunger['hours_until_death']} hours without food. A meal costs ${hunger['meal_price']:.2f}.",
             f"Inference spent so far: ${inference:.4f}" + (f" (avg ${avg_cost:.4f} per wake-up)." if avg_cost is not None else "."),
@@ -137,13 +143,13 @@ class Agent:
         ]
         return "\n".join(lines)
 
-    def wake(self) -> dict[str, Any]:
+    def wake(self, reason: str = "scheduled wake-up") -> dict[str, Any]:
         """Run one wake-up. Returns a summary. Raises Dead if the balance hits zero."""
         self.state.wakeups += 1
         self.log.clear()
         if self.settings.verbose:
-            print(f"\n{time.strftime('%H:%M:%S')}  wake-up #{self.state.wakeups} starting, cash {self.ledger.balance:.4f}, effort {self.state.effort}", flush=True)
-        messages: list[dict[str, Any]] = [{"role": "user", "content": self.briefing()}]
+            print(f"\n{time.strftime('%H:%M:%S')}  wake-up #{self.state.wakeups} starting ({reason}), cash {self.ledger.balance:.4f}, effort {self.state.effort}", flush=True)
+        messages: list[dict[str, Any]] = [{"role": "user", "content": self.briefing(reason)}]
         calls = 0
         ended_by = "end_turn"
         final_text = ""
@@ -191,7 +197,7 @@ class Agent:
             scars.record(self.scars_path(), self.state.wakeups, "wasted",
                          f"Wake-up {self.state.wakeups}: you spent ${cash_before - self.ledger.balance:.2f} on {calls} tool calls, "
                          f"{'repeating the same failing call' if ended_by == 'stuck' else 'without finishing'}, and wrote no notes. Pure waste.")
-        return {"wakeup": self.state.wakeups, "tool_calls": calls, "ended_by": ended_by, "said": final_text, "balance": self.ledger.balance}
+        return {"wakeup": self.state.wakeups, "reason": reason, "tool_calls": calls, "ended_by": ended_by, "said": final_text, "balance": self.ledger.balance}
 
     def _call(self, messages: list[dict[str, Any]]) -> Completion:
         response = self.backend.complete(
@@ -250,6 +256,7 @@ class Agent:
         marked["hunger"] = self.body.describe()
         marked["max_order_usd"] = round(self.ledger.balance * self.settings.max_position_frac, 4)
         marked["max_open_positions"] = self.settings.max_open_positions
+        marked["watchlist"] = self.state.watchlist
         marked["recent_charges"] = [
             {"kind": e["kind"], "amount": e["amount"]} for e in self.ledger.recent(8) if e["kind"] != "deposit"
         ]
@@ -338,6 +345,25 @@ class Agent:
         self.state.sleep_until = time.time() + hours * 3600
         self.state.save()
         return {"sleeping_hours": hours, "hunger_on_waking": round(min(100.0, self.body.hunger + hours * 3600 * self.body.rate_per_second), 1)}
+
+    def tool_watch_market(self, args: dict[str, Any]) -> dict[str, Any]:
+        market_id, outcome = str(args["market_id"]), str(args["outcome"])
+        self.state.watchlist = [w for w in self.state.watchlist if not (w["market_id"] == market_id and w["outcome"] == outcome)]
+        if args.get("remove"):
+            self.state.save()
+            return {"watching": self.state.watchlist}
+        if len(self.state.watchlist) >= 8:
+            raise ValueError("you can watch at most 8 outcomes; remove one first")
+        m = self.market.get_market(market_id)
+        if outcome not in m.outcomes:
+            raise ValueError(f"outcome must be one of {m.outcomes}")
+        below, above = args.get("wake_if_below"), args.get("wake_if_above")
+        if below is None and above is None:
+            raise ValueError("give wake_if_below, wake_if_above, or both")
+        self.state.watchlist.append({"market_id": market_id, "outcome": outcome, "token_id": m.token_for(outcome),
+                                     "question": m.question[:80], "below": below, "above": above})
+        self.state.save()
+        return {"watching": self.state.watchlist, "note": "the harness checks this every minute for free and wakes you if it triggers"}
 
     def tool_request_capability(self, args: dict[str, Any]) -> dict[str, Any]:
         path = os.path.join(self.settings.state_dir, "requests.jsonl")

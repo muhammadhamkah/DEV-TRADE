@@ -130,6 +130,23 @@ TOOLS = [
         "strict": True,
     },
     {
+        "name": "watch_market",
+        "description": "Ask the harness to watch an outcome's price for free while you are not thinking, and wake you early if it goes below or above a level. Use it to catch opportunities without paying to look every time. Set remove=true to stop watching.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "market_id": {"type": "string"},
+                "outcome": {"type": "string"},
+                "wake_if_below": {"type": ["number", "null"], "description": "Price 0..1, or null."},
+                "wake_if_above": {"type": ["number", "null"], "description": "Price 0..1, or null."},
+                "remove": {"type": "boolean"},
+            },
+            "required": ["market_id", "outcome", "wake_if_below", "wake_if_above", "remove"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "request_capability",
         "description": "Ask your operator for a tool or data source you do not have. Describe the edge you think it would give you and why you cannot get it with current tools. Requests are read by a human; nothing changes until they build it.",
         "input_schema": {

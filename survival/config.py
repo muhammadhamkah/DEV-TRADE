@@ -39,7 +39,9 @@ class Settings:
     meal_price: float = _f("MEAL_PRICE", "0.50")          # what one meal costs
     meal_restores: float = _f("MEAL_RESTORES", "50")      # hunger points one meal removes (0..100 scale)
     starve_days: float = _f("STARVE_DAYS", "2")           # days from just-fed to dead with no food
-    tick_seconds: int = _i("TICK_SECONDS", "3600")        # how often the agent wakes
+    tick_seconds: int = _i("TICK_SECONDS", "1800")        # scheduled wake-up interval
+    watch_seconds: int = _i("WATCH_SECONDS", "60")        # how often the harness checks the world (free)
+    wake_on_move: float = _f("WAKE_ON_MOVE", "0.05")      # wake early if a held outcome's bid moves this much
     sleep_enabled: bool = os.environ.get("SLEEP_ENABLED", "0") == "1"  # off: it must feed itself every wake-up
     # Inference
     backend: str = os.environ.get("BACKEND", "anthropic")            # anthropic | ollama | openai
