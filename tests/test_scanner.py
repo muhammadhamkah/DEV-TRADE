@@ -12,4 +12,8 @@ def test_scanner_reports_movers_and_arbitrage(fake_market):
     assert len(leads) == 2
     assert leads[0].startswith("mover: 'Will thing 1 happen?' Yes 0.60->0.75")
     assert "possible arbitrage: 'Will thing 2 happen?' Yes+No = 0.95" in leads[1]
-    assert sc.sweep(now=1800) == []            # no further change, no lead
+    assert sc.sweep(now=1800) == []            # no further change; the persistent gap is not repeated
+    fake_market.raw["2"]["outcomePrices"] = '["0.90", "0.10"]'   # gap closes...
+    assert sc.sweep(now=2200) == []
+    fake_market.raw["2"]["outcomePrices"] = '["0.85", "0.10"]'   # ...and reopens: reported again
+    assert len(sc.sweep(now=2600)) == 1

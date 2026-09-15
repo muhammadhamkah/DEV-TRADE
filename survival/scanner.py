@@ -16,6 +16,8 @@ class Scanner:
     move_threshold: float = 0.08   # absolute price change between sweeps that counts as a lead
     arb_threshold: float = 0.03    # 1 - (Yes + No) that counts as a lead
     last_prices: dict[str, list[float]] = field(default_factory=dict)
+    arb_reported: dict[str, float] = field(default_factory=dict)  # market id -> when we last woke the agent for it
+    arb_cooldown: float = 6 * 3600
     last_run: float = 0.0
     sweeps: int = 0
 
@@ -43,7 +45,11 @@ class Scanner:
             if len(m.prices) == 2:
                 gap = 1.0 - sum(m.prices)
                 if gap >= self.arb_threshold:
-                    leads.append({"score": gap, "text": f"possible arbitrage: '{m.question[:60]}' Yes+No = {sum(m.prices):.2f} (id {m.id}); check the asks and depth"})
+                    if now - self.arb_reported.get(m.id, 0.0) >= self.arb_cooldown:
+                        self.arb_reported[m.id] = now
+                        leads.append({"score": gap, "text": f"possible arbitrage: '{m.question[:60]}' Yes+No = {sum(m.prices):.2f} (id {m.id}); check the asks and depth"})
+                else:
+                    self.arb_reported.pop(m.id, None)  # gap closed; report again if it reopens
             self.last_prices[m.id] = list(m.prices)
         self.sweeps += 1
         leads.sort(key=lambda x: -x["score"])
