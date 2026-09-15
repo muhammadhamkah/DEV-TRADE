@@ -177,11 +177,13 @@ def test_thinking_costs_money_and_can_kill(tmp_path, fake_market):
     assert agent.ledger.is_dead
 
 
-def test_tool_budget_stops_runaway_loops(tmp_path, fake_market):
-    client = ScriptedClient([response([block_tool("get_status", {}, id=f"t{i}")], "tool_use") for i in range(5)])
-    agent = make_agent(tmp_path, fake_market, client, max_tool_calls_per_tick=3)
+def test_tool_budget_stops_runaway_loops_and_warns_first(tmp_path, fake_market):
+    client = ScriptedClient([response([block_tool("get_status", {}, id=f"t{i}")], "tool_use") for i in range(6)])
+    agent = make_agent(tmp_path, fake_market, client, max_tool_calls_per_tick=4)
     summary = agent.wake()
-    assert summary["ended_by"] == "tool_budget" and summary["tool_calls"] == 3
+    assert summary["ended_by"] == "tool_budget" and summary["tool_calls"] == 4
+    second_result = json.loads(client.requests[2]["messages"][4]["content"][0]["content"])
+    assert "BUDGET" in second_result and second_result["BUDGET"].startswith("2 tool call(s) left")
 
 
 def test_effort_choice_persists_to_next_wakeup(tmp_path, fake_market):

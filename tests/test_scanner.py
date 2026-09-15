@@ -24,3 +24,11 @@ def test_scanner_ignores_moves_that_are_resolutions(fake_market):
     sc.sweep(now=1000)
     fake_market.raw["1"]["outcomePrices"] = '["0.01", "0.99"]'   # match ended
     assert sc.sweep(now=2000) == []
+
+
+def test_scanner_ignores_live_matches(fake_market):
+    fake_market.raw["1"]["question"] = "Ljubljana: Weronika Falkowska vs Kristina Novak"
+    sc = Scanner(fake_market, every_seconds=1, move_threshold=0.08, arb_threshold=0.03)
+    sc.sweep(now=1000)
+    fake_market.raw["1"]["outcomePrices"] = '["0.90", "0.10"]'
+    assert sc.sweep(now=2000) == []

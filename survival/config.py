@@ -58,7 +58,7 @@ class Settings:
     synthetic_price_input: float = _f("SYNTHETIC_PRICE_INPUT", "5")
     synthetic_price_output: float = _f("SYNTHETIC_PRICE_OUTPUT", "25")
     default_effort: str = os.environ.get("DEFAULT_EFFORT", "medium")
-    max_tool_calls_per_tick: int = _i("MAX_TOOL_CALLS_PER_TICK", "12")
+    max_tool_calls_per_tick: int = _i("MAX_TOOL_CALLS_PER_TICK", "20")
     max_tokens: int = _i("MAX_TOKENS", "8000")
     enable_fallbacks: bool = os.environ.get("ENABLE_FALLBACKS", "1") == "1"
     verbose: bool = os.environ.get("VERBOSE", "1") == "1"   # print every tool call in the run window

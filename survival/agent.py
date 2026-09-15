@@ -221,6 +221,9 @@ class Agent:
                 repeats = repeats + 1 if sig == last_sig else 0
                 last_sig = sig
                 out, is_error = self._dispatch(block["name"], args)
+                left = self.settings.max_tool_calls_per_tick - calls
+                if left <= 3 and self.state.notes == notes_before:
+                    out = {"result": out, "BUDGET": f"{left} tool call(s) left this wake-up. Write your notes now or you lose everything you learned."}
                 if repeats >= 2:
                     out = {"result": out, "WARNING": f"You have made this exact call {repeats + 1} times in a row. It will not work. Change the input or do something else. One more repeat ends this wake-up."}
                 if repeats >= 3:

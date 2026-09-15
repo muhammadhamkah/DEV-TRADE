@@ -36,6 +36,8 @@ class Scanner:
         for m in markets:
             if not m.prices or m.closed:
                 continue
+            if " vs " in m.question.lower() or " vs. " in m.question.lower():
+                continue  # a live match: prices swing with the score, not with mispricing
             prev = self.last_prices.get(m.id)
             if prev and len(prev) == len(m.prices):
                 idx = max(range(len(m.prices)), key=lambda i: abs(m.prices[i] - prev[i]))
