@@ -123,6 +123,38 @@ class Agent:
                 f"${s.daily_food_cost:.2f}/day food) your cash runs out around {when}, in {days:.1f} days. "
                 f"Positions do not count until sold. Only income or cheaper thinking moves this date.")
 
+    def last_wakeup_record(self) -> list[str]:
+        """What actually happened last wake-up, from the harness log. The agent's notes may say otherwise."""
+        path = os.path.join(self.settings.state_dir, "wakeups.jsonl")
+        if not os.path.exists(path):
+            return []
+        last = None
+        with open(path) as fh:
+            for line in fh:
+                if line.strip():
+                    last = line
+        if not last:
+            return []
+        entry = json.loads(last)
+        lines = []
+        for t in entry.get("tools", []):
+            args = t.get("args") or {}
+            brief = {k: v for k, v in args.items() if k in ("market_id", "outcome", "usd", "shares", "meals", "level", "query")}
+            if "rejected" in t:
+                lines.append(f"{t['tool']}({json.dumps(brief)}) REFUSED: {t['rejected'][:90]}")
+            elif "error" in t:
+                lines.append(f"{t['tool']}({json.dumps(brief)}) FAILED: {t['error'][:90]}")
+            elif t["tool"] in ("buy", "sell", "eat", "set_effort", "watch_market", "write_notes"):
+                r = t.get("result") or {}
+                detail = {k: r[k] for k in ("spent", "shares", "avg_price", "proceeds", "price", "meals", "cost", "effort") if isinstance(r, dict) and k in r}
+                lines.append(f"{t['tool']}({json.dumps(brief)}) OK {json.dumps(detail) if detail else ''}")
+            else:
+                lines.append(f"{t['tool']}({json.dumps(brief)}) OK")
+        summ = entry.get("summary", {})
+        if summ.get("ended_by") in ("stuck", "tool_budget"):
+            lines.append(f"(that wake-up ended by {summ['ended_by']})")
+        return lines
+
     def briefing(self, reason: str = "scheduled wake-up") -> str:
         status = self.tool_get_status({})
         inference = -self.ledger.total("inference")
@@ -142,6 +174,10 @@ class Agent:
         ]
         if scar_lines:
             lines += ["", "SCARS (times you nearly died; never forget them):"] + [f"- {t}" for t in scar_lines]
+        record = self.last_wakeup_record()
+        if record:
+            lines += ["", "LAST WAKE-UP, AS RECORDED BY THE HARNESS (this is what really happened; if your notes disagree, your notes are wrong):"]
+            lines += [f"- {r}" for r in record]
         lines += [
             "",
             "YOUR NOTES:",

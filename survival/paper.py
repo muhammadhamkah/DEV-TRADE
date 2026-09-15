@@ -144,7 +144,7 @@ class PaperBroker:
         proceeds = gross - fee
         self.ledger.credit("trade_sell", proceeds, {"market": market.id, "outcome": outcome, "shares": qty, "price": fill, "fee": fee})
         pos.shares -= qty
-        if pos.shares <= 1e-9:
+        if pos.shares < 0.01:  # dust: not worth tracking or thinking about
             del self.positions[key]
         self._save()
         return {"filled": True, "shares": round(qty, 4), "price": round(fill, 4), "proceeds": round(proceeds, 6), "cash_after": self.ledger.balance}

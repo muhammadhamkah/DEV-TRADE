@@ -40,7 +40,8 @@ class Scanner:
             if prev and len(prev) == len(m.prices):
                 idx = max(range(len(m.prices)), key=lambda i: abs(m.prices[i] - prev[i]))
                 delta = m.prices[idx] - prev[idx]
-                if abs(delta) >= self.move_threshold:
+                settled_like = m.prices[idx] <= 0.03 or m.prices[idx] >= 0.97  # a game ending, not a mispricing
+                if abs(delta) >= self.move_threshold and not settled_like:
                     leads.append({"score": abs(delta), "text": f"mover: '{m.question[:60]}' {m.outcomes[idx]} {prev[idx]:.2f}->{m.prices[idx]:.2f} (id {m.id})"})
             if len(m.prices) == 2:
                 gap = 1.0 - sum(m.prices)

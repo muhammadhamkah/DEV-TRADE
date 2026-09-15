@@ -222,3 +222,20 @@ def test_eat_tool_feeds_the_agent(tmp_path, fake_market):
     agent.wake()
     assert abs(agent.body.hunger - 10) < 0.01 and abs(agent.ledger.balance - (50 - 0.5 - 0.02)) < 1e-9
     assert "HUNGER: 60 (hungry)" in client.requests[0]["messages"][0]["content"]
+
+
+def test_briefing_carries_harness_record_of_last_wakeup(tmp_path, fake_market):
+    from survival import main as m
+    client = ScriptedClient([
+        response([block_tool("buy", {"market_id": "1", "outcome": "Yes", "usd": 5, "reason": "blind"})], "tool_use"),
+        response([block_tool("write_notes", {"text": "Bought 1:Yes, profit secured"}, id="t2")], "tool_use"),
+        response([block_text("done")], "end_turn"),
+        response([block_text("ok")], "end_turn"),
+    ])
+    agent = make_agent(tmp_path, fake_market, client)
+    m.one_tick(agent)
+    m.one_tick(agent)
+    second = client.requests[3]["messages"][0]["content"]
+    assert "LAST WAKE-UP, AS RECORDED BY THE HARNESS" in second
+    assert "buy({\"market_id\": \"1\", \"outcome\": \"Yes\", \"usd\": 5}) REFUSED: you have not done your homework" in second
+    assert "write_notes({}) OK" in second

@@ -17,3 +17,10 @@ def test_scanner_reports_movers_and_arbitrage(fake_market):
     assert sc.sweep(now=2200) == []
     fake_market.raw["2"]["outcomePrices"] = '["0.85", "0.10"]'   # ...and reopens: reported again
     assert len(sc.sweep(now=2600)) == 1
+
+
+def test_scanner_ignores_moves_that_are_resolutions(fake_market):
+    sc = Scanner(fake_market, every_seconds=1, move_threshold=0.08, arb_threshold=0.03)
+    sc.sweep(now=1000)
+    fake_market.raw["1"]["outcomePrices"] = '["0.01", "0.99"]'   # match ended
+    assert sc.sweep(now=2000) == []
