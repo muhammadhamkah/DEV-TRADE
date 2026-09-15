@@ -45,7 +45,8 @@ class Scanner:
             if len(m.prices) == 2:
                 gap = 1.0 - sum(m.prices)
                 if gap >= self.arb_threshold:
-                    if now - self.arb_reported.get(m.id, 0.0) >= self.arb_cooldown:
+                    last = self.arb_reported.get(m.id)
+                    if last is None or now - last >= self.arb_cooldown:
                         self.arb_reported[m.id] = now
                         leads.append({"score": gap, "text": f"possible arbitrage: '{m.question[:60]}' Yes+No = {sum(m.prices):.2f} (id {m.id}); check the asks and depth"})
                 else:
