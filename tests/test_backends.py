@@ -189,3 +189,44 @@ def test_openai_compat_gives_up_immediately_on_a_daily_cap(monkeypatch):
     with pytest.raises(RuntimeError, match="exhausted"):
         OpenAICompatBackend(model="m", base_url="https://h/v1", session=session).complete(
             system="s", tools=[], messages=[{"role": "user", "content": "x"}], effort="low", max_tokens=10)
+
+
+def test_chain_backend_skips_exhausted_brains_and_retries_after_cooldown(monkeypatch):
+    from survival.backends import ChainBackend
+
+    class Brain:
+        def __init__(self, name, fail):
+            self.name, self.fail, self.calls = name, fail, 0
+
+        def complete(self, **kw):
+            self.calls += 1
+            if self.fail:
+                raise RuntimeError("429 tokens per day")
+            return Completion(content=[{"type": "text", "text": self.name}], stop_reason="end_turn", usage={}, cost=0)
+
+    a, b, c = Brain("a", True), Brain("b", True), Brain("c", False)
+    chain = ChainBackend([a, b, c], cooldown=100)
+    import survival.backends as mod
+    t = {"now": 1000.0}
+    monkeypatch.setattr(mod.time, "time", lambda: t["now"])
+    assert chain.complete(system="s", tools=[], messages=[], effort="low", max_tokens=1).text == "c"
+    assert (a.calls, b.calls, c.calls) == (1, 1, 1) and chain.name == "c"
+    chain.complete(system="s", tools=[], messages=[], effort="low", max_tokens=1)
+    assert (a.calls, b.calls, c.calls) == (1, 1, 2)      # a and b skipped during cooldown
+    t["now"] = 1200.0
+    a.fail = False
+    assert chain.complete(system="s", tools=[], messages=[], effort="low", max_tokens=1).text == "a"
+
+
+def test_make_backend_builds_chain_from_numbered_env(monkeypatch):
+    from survival.backends import ChainBackend
+    from survival.config import Settings
+    monkeypatch.setenv("BRAIN1_KIND", "openai")
+    monkeypatch.setenv("BRAIN1_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("BRAIN1_URL", "https://api.cerebras.ai/v1")
+    monkeypatch.setenv("BRAIN1_KEY", "csk-x")
+    monkeypatch.setenv("BRAIN2_KIND", "ollama")
+    monkeypatch.setenv("BRAIN2_MODEL", "qwen3:8b")
+    b = make_backend(Settings())
+    assert isinstance(b, ChainBackend) and len(b.brains) == 2
+    assert b.brains[0].name == "cerebras:gpt-oss-120b" and b.brains[1].name == "ollama:qwen3:8b"

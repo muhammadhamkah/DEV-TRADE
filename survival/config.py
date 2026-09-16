@@ -82,3 +82,20 @@ class Settings:
 
 
 EFFORT_LEVELS = ("low", "medium", "high")
+
+
+def brain_chain() -> list[dict[str, str]]:
+    """BRAIN1_KIND / BRAIN1_MODEL / BRAIN1_URL / BRAIN1_KEY, BRAIN2_..., tried in order.
+    Empty list means: use the single BACKEND (+ FALLBACK_BACKEND) settings instead."""
+    chain = []
+    for n in range(1, 10):
+        kind = os.environ.get(f"BRAIN{n}_KIND", "").strip().lower()
+        if not kind:
+            break
+        chain.append({
+            "kind": kind,
+            "model": os.environ.get(f"BRAIN{n}_MODEL", "").strip(),
+            "url": os.environ.get(f"BRAIN{n}_URL", "").strip(),
+            "key": os.environ.get(f"BRAIN{n}_KEY", "").strip(),
+        })
+    return chain

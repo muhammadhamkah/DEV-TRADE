@@ -44,8 +44,9 @@ The harness runs on any of three backends. Set `BACKEND` in `.env`:
 | `openai` | free tiers exist | synthetic price per token | Any OpenAI-compatible endpoint: Groq, Gemini, OpenRouter, vLLM. |
 | `anthropic` | real API credits | the real inference cost | Claude. Set a spend cap on the key. |
 
-Set `FALLBACK_BACKEND` to hand over to a second brain when the first is rate-limited or down,
-for example a big model on Groq's free tier by day and local Ollama when the daily cap is hit.
+Or stack brains: `BRAIN1_KIND`/`_MODEL`/`_URL`/`_KEY`, `BRAIN2_...`, and so on. They are tried in
+order; a brain that is rate-limited or down is skipped for 15 minutes. Free tiers on Cerebras and
+Groq plus local Ollama as the last resort give a big model most of the day at no cost.
 
 With a free backend the agent is still charged for every token at `SYNTHETIC_PRICE_*`
 rates, so the survival pressure is identical. The only thing that changes is whether the

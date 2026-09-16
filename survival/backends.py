@@ -329,7 +329,7 @@ class OpenAICompatBackend:
             "tools": OllamaBackend._tools(tools),
             "max_tokens": max_tokens,
         }
-        if "gpt-oss" in self.model:  # reasoning models on Groq/OpenAI-compatible hosts take graded effort
+        if any(k in self.model for k in ("gpt-oss", "qwen-3.8", "qwen3.8")):  # reasoning models take graded effort
             body["reasoning_effort"] = effort
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         data = self._post_with_backoff(body, headers)
@@ -401,6 +401,36 @@ class FallbackBackend:
         return out
 
 
+@dataclass
+class ChainBackend:
+    """Try brains in order. One that is rate-limited or down is skipped for `cooldown` seconds."""
+    brains: list[Any]
+    cooldown: float = 900.0
+    name: str = ""
+    failed_at: dict[int, float] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.name = "+".join(b.name for b in self.brains)
+
+    def complete(self, **kw) -> Completion:
+        now = time.time()
+        last_exc: Exception | None = None
+        for i, brain in enumerate(self.brains):
+            if now - self.failed_at.get(i, -1e12) < self.cooldown:
+                continue
+            try:
+                out = brain.complete(**kw)
+                self.name = brain.name
+                return out
+            except Exception as exc:
+                if not FallbackBackend._is_exhaustion(exc):
+                    raise
+                print(f"  brain {i + 1} ({brain.name}) unavailable: {str(exc)[:80]}", flush=True)
+                self.failed_at[i] = now
+                last_exc = exc
+        raise RuntimeError(f"every brain is unavailable; last error: {last_exc}")
+
+
 def _single_backend(settings, kind: str) -> Backend:
     if kind == "anthropic":
         return AnthropicBackend(model=settings.model, enable_fallbacks=settings.enable_fallbacks)
@@ -426,7 +456,29 @@ def _single_backend(settings, kind: str) -> Backend:
     raise SystemExit(f"unknown backend {kind!r}; use 'anthropic', 'ollama' or 'openai'")
 
 
+def _brain_from_spec(settings, spec: dict[str, str], index: int) -> Backend:
+    kind, model = spec["kind"], spec["model"]
+    if kind == "ollama":
+        return OllamaBackend(model=model or settings.ollama_model or "qwen3:8b", url=spec["url"] or settings.ollama_url,
+                             price_input=settings.synthetic_price_input, price_output=settings.synthetic_price_output,
+                             num_ctx=settings.ollama_num_ctx, think=settings.ollama_think, name=f"ollama:{model or settings.ollama_model or 'qwen3:8b'}")
+    if kind == "openai":
+        if not spec["url"]:
+            raise SystemExit(f"BRAIN{index}_URL is required for an openai-compatible brain")
+        host = spec["url"].split("//")[-1].split("/")[0].split(".")[-2] if "." in spec["url"] else spec["url"]
+        return OpenAICompatBackend(model=model, base_url=spec["url"], api_key=spec["key"],
+                                   price_input=settings.synthetic_price_input, price_output=settings.synthetic_price_output,
+                                   name=f"{host}:{model}")
+    if kind == "anthropic":
+        return AnthropicBackend(model=model or settings.model, enable_fallbacks=settings.enable_fallbacks)
+    raise SystemExit(f"BRAIN{index}_KIND={kind!r} is not one of openai, ollama, anthropic")
+
+
 def make_backend(settings) -> Backend:
+    from .config import brain_chain
+    chain = brain_chain()
+    if chain:
+        return ChainBackend([_brain_from_spec(settings, spec, i + 1) for i, spec in enumerate(chain)])
     primary = _single_backend(settings, settings.backend)
     if settings.fallback_backend and settings.fallback_backend != settings.backend:
         return FallbackBackend(primary, _single_backend(settings, settings.fallback_backend))
