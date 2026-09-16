@@ -32,3 +32,14 @@ def test_scanner_ignores_live_matches(fake_market):
     sc.sweep(now=1000)
     fake_market.raw["1"]["outcomePrices"] = '["0.90", "0.10"]'
     assert sc.sweep(now=2000) == []
+
+
+def test_scanner_logs_every_sweep(fake_market, tmp_path):
+    import json
+    path = str(tmp_path / "snap.jsonl")
+    sc = Scanner(fake_market, every_seconds=1, log_path=path)
+    sc.sweep(now=1000)
+    sc.sweep(now=2000)
+    lines = [json.loads(x) for x in open(path).read().splitlines()]
+    assert [x["ts"] for x in lines] == [1000, 2000]
+    assert lines[0]["markets"][0]["id"] == "1" and lines[0]["markets"][0]["p"] == [0.6, 0.4]

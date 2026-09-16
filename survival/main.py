@@ -140,7 +140,8 @@ def run(settings: Settings) -> None:
     obit = os.path.join(settings.state_dir, "OBITUARY.json")
     last_wake = 0.0
     last_bids: dict[str, float] = {}
-    scanner = Scanner(agent.market, every_seconds=settings.scan_seconds, move_threshold=settings.scan_move, arb_threshold=settings.scan_arb)
+    scanner = Scanner(agent.market, every_seconds=settings.scan_seconds, move_threshold=settings.scan_move, arb_threshold=settings.scan_arb,
+                      log_path=os.path.join(settings.state_dir, "market_snapshots.jsonl"))
     while True:
         if os.path.exists(kill):
             print("KILL file present; frozen. Remove it to resume.")

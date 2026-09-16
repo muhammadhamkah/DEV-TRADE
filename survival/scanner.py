@@ -2,6 +2,8 @@
 sharp moves since the last sweep and books where Yes plus No sell for less than a dollar."""
 from __future__ import annotations
 
+import json
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,9 +22,21 @@ class Scanner:
     arb_cooldown: float = 6 * 3600
     last_run: float = 0.0
     sweeps: int = 0
+    log_path: str = ""   # if set, every sweep's prices are appended here for later research
 
     def due(self, now: float | None = None) -> bool:
         return (now or time.time()) - self.last_run >= self.every_seconds
+
+    def _log(self, now: float, markets) -> None:
+        """One line per sweep: compact snapshot of every market seen. This is the dataset nobody else has."""
+        os.makedirs(os.path.dirname(self.log_path) or ".", exist_ok=True)
+        rows = [
+            {"id": m.id, "q": m.question[:80], "p": [round(x, 4) for x in m.prices], "o": m.outcomes,
+             "v": int(m.volume_24h), "l": int(m.liquidity), "end": (m.end_date or "")[:10], "closed": m.closed, "res": m.resolved_outcome}
+            for m in markets
+        ]
+        with open(self.log_path, "a") as fh:
+            fh.write(json.dumps({"ts": round(now), "markets": rows}) + "\n")
 
     def sweep(self, now: float | None = None) -> list[str]:
         """Returns lead strings for the agent's wake-up reason. Empty when nothing stands out."""
@@ -33,6 +47,8 @@ class Scanner:
         except Exception:
             return []
         leads: list[dict[str, Any]] = []
+        if self.log_path:
+            self._log(now, markets)
         for m in markets:
             if not m.prices or m.closed:
                 continue

@@ -76,8 +76,9 @@ If the backend is Ollama on the host machine, set `OLLAMA_URL=http://host.docker
 in `.env`; the compose file maps that name to the host.
 
 State lives in `state/`: `ledger.jsonl` (every cent, append-only), `positions.json`,
-`agent.json` (notes, effort, sleep timer), `wakeups.jsonl` (every tool call), and
-`OBITUARY.json` when it dies. Touch `state/KILL` to freeze the agent without killing it.
+`agent.json` (notes, effort, watchlist), `wakeups.jsonl` (every tool call), `scars.jsonl`,
+`requests.jsonl` (capabilities it asked for), `market_snapshots.jsonl` (every scanner sweep's
+prices, a growing dataset for research), and `OBITUARY.json` when it dies. Touch `state/KILL` to freeze the agent without killing it.
 
 ## Tuning the economy
 
