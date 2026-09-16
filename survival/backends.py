@@ -380,7 +380,10 @@ class FallbackBackend:
     @staticmethod
     def _is_exhaustion(exc: Exception) -> bool:
         text = str(exc)
-        return any(k in text for k in ("429", "413", "Rate limit", "tokens per day", "Request too large", "ConnectionError", "Failed to establish", "refused"))
+        # rate limits, oversized requests, account/quota refusals, wrong model on this account, or an unreachable host
+        return any(k in text for k in ("429", "413", "402", "401", "403", "404", "Rate limit", "tokens per day", "Request too large",
+                                       "Payment required", "payment_required", "quota", "ConnectionError", "Failed to establish", "refused",
+                                       "model_not_found", "does not exist", "500", "502", "503"))
 
     def complete(self, **kw) -> Completion:
         now = time.time()

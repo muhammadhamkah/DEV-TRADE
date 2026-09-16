@@ -230,3 +230,21 @@ def test_make_backend_builds_chain_from_numbered_env(monkeypatch):
     b = make_backend(Settings())
     assert isinstance(b, ChainBackend) and len(b.brains) == 2
     assert b.brains[0].name == "cerebras:gpt-oss-120b" and b.brains[1].name == "ollama:qwen3:8b"
+
+
+def test_chain_skips_a_brain_that_wants_payment_or_has_no_such_model():
+    from survival.backends import ChainBackend
+
+    class Paid:
+        name = "cerebras"
+
+        def complete(self, **kw):
+            raise RuntimeError('openai-compat 402: {"message":"Payment required to access this resource."}')
+
+    class Free:
+        name = "groq"
+
+        def complete(self, **kw):
+            return Completion(content=[{"type": "text", "text": "free"}], stop_reason="end_turn", usage={}, cost=0)
+
+    assert ChainBackend([Paid(), Free()]).complete(system="s", tools=[], messages=[], effort="low", max_tokens=1).text == "free"
