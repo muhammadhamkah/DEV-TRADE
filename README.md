@@ -105,3 +105,17 @@ python -m pytest
 
 The suite drives the agent loop with a scripted model and a fake market, so it needs no API key
 and no network.
+
+## Research: how honest are Polymarket's prices?
+
+The agent's brain holds no market data. This does. Two offline scripts, no key needed:
+
+```bash
+python -m research.backfill --max 3000   # pull resolved markets and their price paths (resumable)
+python -m research.analyze               # calibration, longshot bias, drift; writes research/data/base_rates.md
+```
+
+The report answers: when the market said 85%, how often did it happen; do 3-cent outcomes pay 3% of
+the time; does the price a day before close already know the answer; what buying each price bucket
+and holding to settlement returns after spread. Those base rates belong in the agent's prompt.
+The live harness also logs every scanner sweep to `state/market_snapshots.jsonl`.
