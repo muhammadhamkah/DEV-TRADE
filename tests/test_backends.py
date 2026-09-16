@@ -175,3 +175,17 @@ def test_make_backend_builds_fallback_chain():
     from survival.config import Settings
     b = make_backend(Settings(backend="openai", model="m", openai_base_url="https://h/v1", fallback_backend="ollama", ollama_model="q"))
     assert isinstance(b, FallbackBackend) and b.fallback.model == "q"
+
+
+def test_openai_compat_gives_up_immediately_on_a_daily_cap(monkeypatch):
+    class Daily(FakeResp):
+        def __init__(self):
+            super().__init__({"error": {"message": "Rate limit reached ... on tokens per day (TPD): Limit 200000"}}, status=429)
+            self.headers = {}
+    session = FakeSession([Daily()])
+    import survival.backends as b
+    monkeypatch.setattr(b.time, "sleep", lambda s: (_ for _ in ()).throw(AssertionError("should not wait")))
+    import pytest
+    with pytest.raises(RuntimeError, match="exhausted"):
+        OpenAICompatBackend(model="m", base_url="https://h/v1", session=session).complete(
+            system="s", tools=[], messages=[{"role": "user", "content": "x"}], effort="low", max_tokens=10)

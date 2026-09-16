@@ -161,6 +161,10 @@ class OllamaBackend:
             resp = self.session.post(f"{self.base_url}/chat/completions", json=body, headers=headers, timeout=self.timeout)
             if resp.status_code == 429 and waited < self.max_wait_total:
                 delay = self._retry_delay(resp, attempt)
+                text = getattr(resp, "text", "") or ""
+                if "per day" in text or "TPD" in text or "RPD" in text or delay >= 60:
+                    # a daily cap, or a wait so long it may as well be one: hand over to the fallback now
+                    raise RuntimeError(f"{self.name} 429 exhausted: {text[:200]}")
                 print(f"  rate limited by {self.name}; waiting {delay:.0f}s", flush=True)
                 time.sleep(delay)
                 waited += delay
@@ -291,6 +295,10 @@ class OpenAICompatBackend:
             resp = self.session.post(f"{self.base_url}/chat/completions", json=body, headers=headers, timeout=self.timeout)
             if resp.status_code == 429 and waited < self.max_wait_total:
                 delay = self._retry_delay(resp, attempt)
+                text = getattr(resp, "text", "") or ""
+                if "per day" in text or "TPD" in text or "RPD" in text or delay >= 60:
+                    # a daily cap, or a wait so long it may as well be one: hand over to the fallback now
+                    raise RuntimeError(f"{self.name} 429 exhausted: {text[:200]}")
                 print(f"  rate limited by {self.name}; waiting {delay:.0f}s", flush=True)
                 time.sleep(delay)
                 waited += delay
